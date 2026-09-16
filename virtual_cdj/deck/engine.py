@@ -1459,6 +1459,7 @@ _HANDLERS: dict[CommandType, Callable[[Deck, DeckCommand], None]] = {
     CommandType.LOOP_HALVE: Deck._cmd_loop_halve,
     CommandType.LOOP_DOUBLE: Deck._cmd_loop_double,
     CommandType.BEAT_JUMP: Deck._cmd_beat_jump,
+    CommandType.BEAT_JUMP_BEATS: Deck._cmd_beat_jump_beats,
     CommandType.TEMPO_SET: Deck._cmd_tempo_set,
     CommandType.TEMPO_RANGE_CYCLE: Deck._cmd_tempo_range_cycle,
     CommandType.MASTER_TEMPO_TOGGLE: Deck._cmd_master_tempo_toggle,

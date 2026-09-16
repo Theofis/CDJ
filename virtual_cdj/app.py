@@ -152,6 +152,7 @@ class CdjApplication:
             self.decks,
             library=lambda: self.library,
             load_handler=self.load_by_track_id,
+            track_search_handler=self.track_search,
             output=backend_output,
             suppress_output=self._suppress_default_button_output,
         )
@@ -405,6 +406,37 @@ class CdjApplication:
         track = self.library.track(track_id)
         path = track.file_path if track is not None and track.file_path else track_id
         self.load_track(deck_id, path)
+
+    def track_search(self, deck_id: int, direction: int) -> None:
+        """Nachbartrack laden - TRACK SEARCH |<< / >>| (Handbuch S. 48).
+
+        Die Reihenfolge ist die des Durchsuchen-Bildschirms: die Trackliste
+        derjenigen Bibliothek, in der der geladene Track steht. Damit springt
+        die Taste dorthin, wo der Benutzer den Track auch gefunden hat.
+
+        Der Sprung an den **Anfang** des laufenden Tracks passiert nicht
+        hier, sondern in der Deck-Engine; sie ruft diesen Weg nur auf, wenn
+        wirklich ein anderer Track gemeint ist.
+
+        Ohne geladenen Track, ohne Liste oder am Rand der Liste passiert
+        nichts. Eine erfundene Reihenfolge waere schlechter als keine, und
+        ueber das Ende hinaus gibt es keinen Track.
+        """
+        controller = self.controllers.get(deck_id)
+        if controller is None:
+            return
+        track = controller.get_state().track
+        if track is None:
+            return
+        for library in self.library.libraries:
+            tracks = tuple(library.tracks())
+            for index, info in enumerate(tracks):
+                if info.track_id != track.track_id:
+                    continue
+                target = index + (1 if direction > 0 else -1)
+                if 0 <= target < len(tracks):
+                    self.load_by_track_id(deck_id, tracks[target].track_id)
+                return
 
     def demo_track_ids(self) -> tuple[str, ...]:
         provider = self.demo

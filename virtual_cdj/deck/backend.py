@@ -24,6 +24,10 @@ OutputSink = Callable[[str], None]
 OutputSuppression = Callable[[DeckCommand], bool]
 LibrarySource = Callable[[], object | None]
 LoadHandler = Callable[[int, str], None]
+#: Nachbartrack laden: Deck-ID und Richtung (``-1`` / ``+1``). Wird gerufen,
+#: wenn die Deck-Engine einen Trackwechsel angefordert hat, den sie selbst
+#: nicht ausfuehren kann - sie kennt keine Trackliste.
+TrackSearchHandler = Callable[[int, int], None]
 
 
 class DeckBackend(ABC):
@@ -204,6 +208,7 @@ class _MockBackend(DeckBackend):
         *,
         library: LibrarySource | None = None,
         load_handler: LoadHandler | None = None,
+        track_search_handler: TrackSearchHandler | None = None,
         output: OutputSink = print,
         suppress_output: OutputSuppression | None = None,
     ) -> None:
@@ -214,6 +219,7 @@ class _MockBackend(DeckBackend):
             self.decks = {deck.deck_id: deck for deck in decks}
         self._library = library
         self._load_handler = load_handler
+        self._track_search_handler = track_search_handler
         self._output = output
         self._suppress_output = suppress_output
         self.running = False
@@ -283,6 +289,13 @@ class _MockBackend(DeckBackend):
             track_id = str(cmd.get("track_id", ""))
             if track_id:
                 self._load_handler(cmd.deck_id, track_id)
+        if cmd.type is CommandType.TRACK_SEARCH:
+            # Das Deck hat entschieden, ob der Druck an den Trackanfang
+            # fuehrt oder wirklich den Track wechselt. Nur im zweiten Fall
+            # liegt hier eine Anforderung - derselbe Weg wie bei LOAD.
+            for direction in deck.take_track_requests():
+                if self._track_search_handler is not None:
+                    self._track_search_handler(cmd.deck_id, direction)
 
         if cmd.type is CommandType.TEMPO_SET:
             line = f"[{self.name}] TEMPO {deck.state.tempo_percent:+g} %"
@@ -381,6 +394,7 @@ class CdjBackend(_MockBackend):
         *,
         library: LibrarySource | None = None,
         load_handler: LoadHandler | None = None,
+        track_search_handler: TrackSearchHandler | None = None,
         output: OutputSink = print,
         suppress_output: OutputSuppression | None = None,
     ) -> None:
@@ -389,6 +403,7 @@ class CdjBackend(_MockBackend):
             decks,
             library=library,
             load_handler=load_handler,
+            track_search_handler=track_search_handler,
             output=output,
             suppress_output=suppress_output,
         )

@@ -141,6 +141,15 @@ class SettingsPage(Page):
             f"{beat_value_label(deck.quantize_beats)} Beat",
             CommandType.QUANTIZE_BEATS, {},
         )
+        # Sprungweite fuer BEAT JUMP. Am Geraet steht sie in
+        # UTILITY/SHORTCUT; an den Tastern erreicht sie CALL/DELETE +
+        # BEAT JUMP. Hier die dritte, bildschirmgebundene Tuer zum selben
+        # zentralen Wert.
+        y = self._toggle(
+            m, width, y, "Beat Jump Beat Value",
+            f"{beat_value_label(deck.beat_jump_beats)} Beat",
+            CommandType.BEAT_JUMP_BEATS, {},
+        )
         y = self._toggle(
             m, width, y, "Slip",
             "AN" if deck.slip else "AUS",

@@ -232,6 +232,24 @@ Die Platte im Vinyl-Modus anzufassen haelt die Wiedergabe an; mit
 eingeschaltetem SLIP laeuft die Zeitachse dabei im Hintergrund weiter.
 Beides steht in [PLAYER_MODES.md](PLAYER_MODES.md).
 
+## Rueckwaerts dreht auch das Jogwheel um
+
+"Die Bedienung des Jog-Wheels erfolgt ebenfalls auf umgekehrte Weise"
+(Handbuch S. 47). Steht der Richtungsschalter auf `REV` oder `SLIP REV`,
+kehrt `Deck._cmd_jog_move()` den Positionsversatz um: eine Umdrehung im
+Uhrzeigersinn zieht den Track dann rueckwaerts.
+
+Betroffen ist nur der **Transport** - Scratch, Frame Search und Pitch
+Bend. Zwei Wege bleiben richtungstreu:
+
+* die **Loop-Feineinstellung** im Adjust-Modus (sie bearbeitet einen
+  Punkt, sie spielt nichts ab),
+* die **schnelle Suche** mit gehaltenem SEARCH (sie navigiert durch den
+  Track).
+
+Bei Slip Reverse laeuft die Hintergrund-Zeitachse unveraendert vorwaerts;
+sie beschreibt die normale Wiedergabe, nicht den Eingriff.
+
 Unabhaengig davon gilt: ist ein Loop im Adjust-Modus, verschiebt dieselbe
 Bewegung den Loop-Punkt statt der Wiedergabe, ebenfalls mit einem Beat je
 Umdrehung (siehe [LOOP.md](LOOP.md)).

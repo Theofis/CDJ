@@ -95,15 +95,56 @@ Beatzeiten und halten damit auch bei wechselndem Tempo.
 
 | Taste | kein Loop aktiv | Loop aktiv |
 | ----- | --------------- | ---------- |
-| LOOP IN | Anfang auf den naechsten Beat | IN-Adjust ein/aus |
+| LOOP IN / CUE | Anfang **und** Cue-Punkt setzen | IN-Adjust ein/aus |
 | LOOP OUT | Ende setzen, Loop startet | OUT-Adjust ein/aus |
 | CALL < | 4-Beat-Loop | Laenge halbieren |
 | CALL > | 8-Beat-Loop | Laenge verdoppeln |
 | RELOOP / EXIT | letzten Loop aufrufen | Loop verlassen |
+| BEAT JUMP < > | Sprung um die eingestellte Beatzahl | **Loop verschieben** |
+| Pad A-H (Hotcue-Modus) | Punkt speichern | **Loop speichern** |
 | Pad A-H (Beatloop-Modus) | Loop dieser Laenge | andere Laenge, gleiches Pad verlaesst |
 
 Pad-Laengen: A = 1/4, B = 1/2, C = 1, D = 2, E = 4, F = 8, G = 16, H = 32
 Beats (`BEAT_LOOP_LENGTHS` in `deck/state.py`).
+
+### LOOP IN setzt auch den Cue-Punkt
+
+Die Taste heisst am Geraet `LOOP IN/CUE (IN ADJUST)` und tut genau das,
+was ihr Name sagt: derselbe Druck setzt den Loop-Anfang (Handbuch S. 57)
+**und** den Cue-Punkt (S. 54). Beides an derselben, gegebenenfalls
+quantisierten Stelle - zwei getrennte Rundungen waeren zwei verschiedene
+Punkte, und CUE fuehrte dann nicht mehr an den Loop-Anfang zurueck.
+
+Bei laufendem Loop schaltet die Taste stattdessen den IN-Adjust um; dann
+bleibt der Cue-Punkt, wo er ist.
+
+### Loop Move
+
+Beat Jump bei laufendem Loop verschiebt den **Loop**, nicht die Position
+(Handbuch S. 66/67). Anfang und Ende wandern gemeinsam, die Laenge bleibt,
+und die Wiedergabe wandert mit - sie steht danach an derselben Stelle im
+Loop. Ohne das Mitwandern faende sie sich ausserhalb wieder, und die
+Loop-Grenze zoege sie im naechsten Bild zurueck.
+
+`LoopEngine.moved()` liefert deshalb **zwei** Werte: den neuen Zustand und
+den Versatz in Sekunden, um den der Aufrufer die Position nachzieht.
+Gerechnet wird mit der Beatlaenge am Loop-Anfang; bei wechselndem Tempo
+ist das eine Naeherung, weil ein beatweiser Versatz ueber eine Tempogrenze
+hinweg keine eindeutige Laenge hat. Ein Versatz, der den Anfang vor den
+Trackbeginn schoebe, wird verworfen.
+
+`beats` und das Pad-Gedaechtnis bleiben stehen: es ist derselbe Loop, nur
+an einer anderen Stelle. RELOOP holt danach den **verschobenen** Loop.
+
+### Hotcue speichert bei laufendem Loop einen Loop
+
+"Wenn dieser Vorgang waehrend der Loop-Wiedergabe erfolgt, wird stattdessen
+ein Loop gesetzt" (Handbuch S. 62). Das Pad speichert dann `in_s`/`out_s`
+des laufenden Loops als `CueKind.LOOP`. Die Punkte werden dabei **nicht**
+noch einmal quantisiert - sonst waere der gespeicherte Loop nicht mehr
+derselbe wie der laufende.
+
+Ein bereits belegtes Pad bleibt unberuehrt, auch hier (S. 62).
 
 ### Pad-Modus
 
@@ -223,6 +264,33 @@ Ergibt die neue Laenge kein sauberes Vielfaches von 1/64 Beat, wird
 `beats` auf `None` gesetzt: die Oberflaeche zeigt dann keine Beat-Laenge an,
 statt eine falsche zu zeigen.
 
+### SEARCH als zweite Feineinstellung
+
+Das Handbuch nennt beide Wege gleichwertig: "Druecken Sie die [SEARCH <<]-
+oder [SEARCH >>]-Taste **oder** drehen Sie das Jog-Wheel" (S. 58). Im
+Adjust-Modus ist SEARCH deshalb kein Schnellvorlauf mehr, sondern
+verschiebt den Loop-Punkt - eine Sekunde Halten um einen Beat
+(`LOOP_ADJUST_BEATS_PER_S`). Es ist dieselbe Rechnung wie am Jogwheel;
+nur der Massstab kommt aus der Haltedauer statt aus der Drehung.
+
+Ohne aktiven Loop bleibt SEARCH der Schnellvorlauf - derselbe Vorbehalt
+wie beim Jogwheel.
+
+### Die 10-Sekunden-Automatik
+
+"Druecken Sie die [LOOP IN/CUE]- oder [LOOP OUT]-Taste erneut **oder warten
+Sie mit der Bedienung des Geraets fuer mindestens 10 Sekunden**, um die
+Loop-Wiedergabe fortzusetzen" (S. 58).
+
+`Deck._expire_adjust()` beendet den Adjust-Modus nach
+`LOOP_ADJUST_TIMEOUT_S` und sichert den Loop - dasselbe Ergebnis wie ein
+zweiter Tastendruck (`LoopEngine.ended_adjust()`). Jedes Kommando gilt als
+Bedienung und setzt die Frist zurueck; das Verschieben selbst ebenfalls.
+
+Ohne diese Automatik bleibt das Jogwheel unbegrenzt vom Transport
+abgekoppelt. Genau das sieht aus wie ein aufgehaengtes Geraet - und war
+der Grund, sie nachzuziehen.
+
 ## Ein Loop endet nur auf Ansage
 
 Ein laufender Loop bleibt aktiv, bis ihn jemand ausdruecklich beendet.
@@ -233,8 +301,17 @@ gibt keinen anonymen Weg aus einem Loop:
 | --- | --- |
 | `RELOOP_EXIT` | RELOOP/EXIT - die vorgesehene Benutzeraktion |
 | `BEAT_LOOP_PAD` | dasselbe Beatloop-Pad erneut, das den Loop gesetzt hat |
-| `JUMPED_OUT` | ausdruecklicher Sprung nach draussen: SEEK, CUE, Hotcue |
-| `TRACK_CHANGED` | neuer Track oder Auswurf |
+| `JUMPED_OUT` | ausdruecklicher Sprung nach draussen: SEEK, CUE, Hotcue, TRACK SEARCH an den Trackanfang |
+| `TRACK_CHANGED` | neuer Track oder Auswurf - auch der von TRACK SEARCH ausgeloeste |
+
+TRACK SEARCH steht in beiden Zeilen, weil es zwei verschiedene Dinge tut:
+der erste Druck auf `|<<` springt an den **Anfang des laufenden Tracks** -
+ein Sprung wie jeder andere, also `JUMPED_OUT`. Erst der zweite wechselt
+den Track, und dann greift `TRACK_CHANGED` beim Laden. In beiden Faellen
+ist der Loop danach beendet.
+
+**Beat Jump beendet keinen Loop.** Bei laufendem Loop verschiebt es ihn
+(Loop Move) und nimmt die Wiedergabe mit; `active` bleibt unberuehrt.
 
 Slip beendet einen Loop **nicht**. Es haengt sich in `Deck._set_loop` ein
 und fuehrt nur seine eigene Hintergrund-Zeitachse mit; endet der Loop aus
@@ -314,3 +391,10 @@ endet: 100 Wiederholungen ohne Drift, Laengenwechsel im Betrieb,
 Beatloop-Pads samt Loslassen, Pause/Play, 16 unbeteiligte Bedienschritte,
 acht Tempi von 60 bis 200 BPM, Loop-Enden abseits der Blockgrenze und die
 vier erlaubten Abschaltgruende.
+
+`tests/test_cdj_operations.py` deckt die spaeter nachgezogenen
+Handbuchstellen ab: Loop Move samt Mitwandern der Wiedergabe und RELOOP,
+LOOP IN als Cue-Setzer, SEARCH als Feineinstellung, die
+10-Sekunden-Automatik, den Hotcue-Loop und TRACK SEARCH als Loop-Ausstieg.
+Dazu ein Durchlauf, der zeigt, dass **keiner** dieser Wege einen Loop von
+selbst beendet.
