@@ -1,0 +1,19 @@
+# Abhaengigkeiten der Audio- und Analyseschicht.
+# Begruendung je Paket: docs/DEPENDENCIES.md
+#
+#   python -m pip install -r requirements.txt
+
+numpy>=2.0            # internes Audioformat, Waveform, Callback-Rechnung
+scipy>=1.11           # Butterworth-Filterbank fuer die RGB-Baender
+soundfile>=0.12       # libsndfile: WAV, FLAC, AIFF, MP3, OGG
+sounddevice>=0.4      # PortAudio-Ausgabe
+librosa>=1.0          # Onset, Tempo, Beat-Tracking, Chroma
+soxr>=0.5             # hochwertiges Resampling beim Laden
+mutagen>=1.47         # Tags und Artwork
+Pillow>=10.0          # Waveform-Bilder auf das Tk-Canvas blitten
+
+# Nur mit Python 3.11+ und Tkinter aus der Standardbibliothek getestet.
+#
+# Nicht enthalten und derzeit nicht benoetigt:
+#   av / ffmpeg       -> erst fuer AAC/M4A (siehe audio/decoder.py)
+#   pyserial          -> erst fuer die ESP32-Anbindung

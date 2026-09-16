@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Virtuelle Umgebungen
+.venv/
+venv/
+env/
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Erzeugte Analysedaten
+#
+# Der Analyse-Cache wird beim ersten Laden eines Tracks angelegt und laesst
+# sich jederzeit aus den Audiodateien neu berechnen (siehe README,
+# "cache/analysis/ persistenter Analyse-Cache (wird angelegt)").
+cache/
+
+# Protokolle der Eingabeschicht - Messdaten eines Laufs, kein Projektstand
+input_monitor.jsonl
+*.log
+
+# Eingemessene Kalibrierwerte. Sie gehoeren zum jeweiligen Geraet, nicht
+# zum Quellstand; die Datei wird beim ersten Einmessen angelegt.
+config/calibration.json
+
+# IDE
+.idea/
+*.swp
+
+# Betriebssystem
+Thumbs.db
+desktop.ini
+.DS_Store

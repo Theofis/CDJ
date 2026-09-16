@@ -1,0 +1,160 @@
+{
+  "version": 2,
+  "buttons": {
+    "BACK": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "BLUE"
+    },
+    "BEAT_LOOP_4": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "ORANGE"
+    },
+    "BEAT_LOOP_8": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "ORANGE"
+    },
+    "BROWSE": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "BLUE"
+    },
+    "CUE": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "ORANGE"
+    },
+    "KEY_SYNC": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "BLUE"
+    },
+    "LOOP_IN": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "ORANGE"
+    },
+    "LOOP_OUT": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "ORANGE"
+    },
+    "MASTER": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "ORANGE"
+    },
+    "MASTER_TEMPO": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "BLUE"
+    },
+    "MENU": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "BLUE"
+    },
+    "PAD_A": {
+      "display_name": "",
+      "console_output": "Hotcue A",
+      "led_color": "BLUE"
+    },
+    "PAD_B": {
+      "display_name": "",
+      "console_output": "Hotcue B",
+      "led_color": "BLUE"
+    },
+    "PAD_C": {
+      "display_name": "",
+      "console_output": "Hotcue c",
+      "led_color": "BLUE"
+    },
+    "PAD_D": {
+      "display_name": "",
+      "console_output": "Hotcue D",
+      "led_color": "BLUE"
+    },
+    "PAD_E": {
+      "display_name": "",
+      "console_output": "Hotcue E",
+      "led_color": "BLUE"
+    },
+    "PAD_F": {
+      "display_name": "",
+      "console_output": "Hotcue F",
+      "led_color": "BLUE"
+    },
+    "PAD_G": {
+      "display_name": "",
+      "console_output": "Hotcue G",
+      "led_color": "BLUE"
+    },
+    "PAD_H": {
+      "display_name": "",
+      "console_output": "Hotcue H",
+      "led_color": "BLUE"
+    },
+    "PLAYLIST": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "BLUE"
+    },
+    "QUANTIZE": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "BLUE"
+    },
+    "RELOOP_EXIT": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "ORANGE"
+    },
+    "SEARCH": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "BLUE"
+    },
+    "SHORTCUT": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "BLUE"
+    },
+    "SLIP": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "BLUE"
+    },
+    "SOURCE": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "BLUE"
+    },
+    "TAG_LIST": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "BLUE"
+    },
+    "TAG_TRACK_REMOVE": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "BLUE"
+    },
+    "TEMPO_RANGE": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "NONE"
+    },
+    "TEMPO_RESET": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "NONE"
+    },
+    "TRACK_FILTER_EDIT": {
+      "display_name": "",
+      "console_output": "",
+      "led_color": "BLUE"
+    }
+  }
+}

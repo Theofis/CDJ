@@ -1,0 +1,226 @@
+{
+  "version": 1,
+  "note": "Automatisch aus virtual_cdj/core/controls.py erzeugt. 'hardware' ist null, solange kein physikalischer Eingang zugeordnet ist. Beispiele fuer belegte Eintraege siehe docs/HARDWARE_MAPPING.md.",
+  "mapping": {
+    "SOURCE": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "BROWSE": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "TAG_LIST": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "PLAYLIST": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "SEARCH": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "MENU": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "BROWSE_ROTATE": {
+      "input_type": "encoder",
+      "hardware": null
+    },
+    "BROWSE_PRESS": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "BACK": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "TAG_TRACK_REMOVE": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "TRACK_FILTER_EDIT": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "SHORTCUT": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "USB_STOP": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "SLIP": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "QUANTIZE": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "SHIFT": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "PAD_A": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "PAD_B": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "PAD_C": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "PAD_D": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "PAD_E": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "PAD_F": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "PAD_G": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "PAD_H": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "LOOP_IN": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "LOOP_OUT": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "RELOOP_EXIT": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "HOT_CUE": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "BEAT_JUMP": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "CUE_LOOP_CALL_PREV": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "CUE_LOOP_CALL_NEXT": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "DELETE": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "MEMORY": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "JOG_MODE": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "BEAT_LOOP_4": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "BEAT_LOOP_8": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "BEAT_JUMP_PREV": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "BEAT_JUMP_NEXT": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "DIRECTION": {
+      "input_type": "switch",
+      "hardware": null
+    },
+    "TRACK_SEARCH_PREV": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "TRACK_SEARCH_NEXT": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "SEARCH_BACK": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "SEARCH_FWD": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "CUE": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "PLAY": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "BEAT_SYNC": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "MASTER": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "KEY_SYNC": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "TEMPO_RANGE": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "MASTER_TEMPO": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "TEMPO_FADER": {
+      "input_type": "analog",
+      "hardware": null
+    },
+    "TEMPO_RESET": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "JOG_MOVE": {
+      "input_type": "encoder",
+      "hardware": null
+    },
+    "JOG_TOUCH": {
+      "input_type": "digital",
+      "hardware": null
+    },
+    "VINYL_SPEED_ADJUST": {
+      "input_type": "analog",
+      "hardware": null
+    }
+  }
+}
