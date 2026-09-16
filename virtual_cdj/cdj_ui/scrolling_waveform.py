@@ -301,6 +301,19 @@ class CdjScrollingWaveform(Region):
     def _draw_beat_grid(
         self, state: DeckState, start: float, end: float, height: float
     ) -> None:
+        """Eine Linienform fuer jeden Beat - unterschieden nur ueber die Farbe.
+
+        Jede Linie geht ueber die volle Hoehe und ist 1 px breit. Beat 1 des
+        Takts ist rot, die uebrigen sind grau; bei einem 4er-Takt ergibt das
+        rot - grau - grau - grau und dann wieder von vorn. Laenge und Breite
+        tragen **keine** Bedeutung mehr, sonst haetten zwei Merkmale dieselbe
+        Aussage.
+
+        Gezaehlt wird gegen ``first_downbeat_index`` des Tracks, nicht gegen
+        den Bildausschnitt. Dadurch haengt das Muster am echten Beatgrid und
+        verrutscht beim Zoomen, Verschieben oder waehrend der Wiedergabe
+        nicht: derselbe Beat bekommt immer dieselbe Farbe.
+        """
         if state.track is None:
             return
         grid = state.track.beat_grid
@@ -315,9 +328,6 @@ class CdjScrollingWaveform(Region):
 
         per_bar = max(1, grid.beats_per_bar)
         m = self.metrics
-        # Drei Stufen, damit das Raster gelesen werden kann statt nur zu
-        # streifen: Beat dezent, Taktanfang klarer, Phrase (4 Takte)
-        # deutlich. Alle Linien 1 px und pixelgenau gesetzt.
         for number in range(first, last + 1):
             time_s = grid.beat_time(number)
             if time_s is None:
@@ -326,20 +336,12 @@ class CdjScrollingWaveform(Region):
             if x < 0 or x > self.w:
                 continue
             x = m.snap(x)
-            offset = number - grid.first_downbeat_index
-            if offset % (per_bar * 4) == 0:
-                self.create_line(
-                    x, 0, x, height, fill=theme.PHRASE_LINE, width=1
-                )
-            elif offset % per_bar == 0:
-                self.create_line(
-                    x, 0, x, height, fill=theme.BAR_LINE, width=1
-                )
-            else:
-                self.create_line(
-                    x, int(height * 0.22), x, int(height * 0.78),
-                    fill=theme.BEAT_LINE, width=1,
-                )
+            downbeat = (number - grid.first_downbeat_index) % per_bar == 0
+            self.create_line(
+                x, 0, x, height,
+                fill=theme.GRID_DOWNBEAT if downbeat else theme.GRID_BEAT,
+                width=1,
+            )
 
     def _draw_loop(
         self, state: DeckState, start: float, end: float, height: float

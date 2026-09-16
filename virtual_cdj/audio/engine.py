@@ -287,13 +287,21 @@ class DeckVoice:
         wraps = 0
 
         while produced < frames and wraps < MAX_LOOP_WRAPS_PER_BLOCK:
-            available = self._frames_until_boundary()
-            if available <= 0:
+            # Steht die Position schon auf oder hinter der Grenze, wird
+            # zuerst umgelaufen. Das passiert, wenn Loop Out waehrend des
+            # Laufs hinter den Playhead gezogen wurde.
+            if self._at_or_past_boundary():
                 if not self._wrap_at_boundary():
                     break
                 wraps += 1
                 continue
 
+            # Mindestens ein Sample je Durchgang. Bleibt bis zur Grenze
+            # weniger als ein ganzes Sample, liefert die Rechnung 0 - dann
+            # kaeme die Position nie an der Grenze an, und der Umlauf liefe
+            # mit negativem Ueberhang auf der Stelle. Genau so blieb die
+            # Wiedergabe frueher exakt auf Loop Out stehen.
+            available = max(1, self._frames_until_boundary())
             chunk = min(frames - produced, available)
             view = scratch[produced:produced + chunk]
             self._position = self.processor.render(
@@ -301,6 +309,8 @@ class DeckVoice:
             )
             produced += chunk
 
+            # Noch im selben Block zurueckfalten, damit nach aussen nie eine
+            # Position auf oder hinter Loop Out sichtbar wird.
             if self._at_or_past_boundary():
                 if not self._wrap_at_boundary():
                     break
@@ -344,6 +354,11 @@ class DeckVoice:
 
     def _wrap_at_boundary(self) -> bool:
         """Loop schliessen oder Wiedergabe beenden.
+
+        Wird **nur** gerufen, wenn ``_at_or_past_boundary()`` gilt. Damit ist
+        der Ueberhang nie negativ. Ohne diese Bedingung bildet das Modulo
+        einen negativen Ueberhang auf dieselbe Position zurueck, und die
+        Stimme steht still.
 
         Returns:
             Ob weiter Audio geliefert werden kann.

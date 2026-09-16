@@ -79,19 +79,31 @@ Kosten: auf echten Daten 2.89 -> 2.95 ms je Bild, weil nur die Zeilen
 bearbeitet werden, die der lauteste Balken erreicht, und die Abstandskarte
 zur Mittellinie einmal je Bildgroesse berechnet wird statt je Bild.
 
-## 5. Beatgrid in drei Stufen
+## 5. Beatgrid: eine Linienform, zwei Farben
 
-Vorher: Beat dezent, Taktanfang 2 px. Jetzt drei Stufen, alle 1 px und
-pixelgenau:
+In der **vergroesserten laufenden Wellenform** hat jede Beatlinie dieselbe
+Hoehe und dieselbe Breite. Unterschieden wird ausschliesslich ueber die
+Farbe:
 
 ```text
-Beat        BEAT_LINE   #39434f   nur mittlere 56 % der Hoehe
-Taktanfang  BAR_LINE    #6e7c8c   volle Hoehe
-Phrase      PHRASE_LINE #aab6c4   volle Hoehe, alle 4 Takte
+Beat 1 des Takts   GRID_DOWNBEAT  #e8483f (rot)   volle Hoehe, 1 px
+Beat 2, 3, 4       GRID_BEAT      #6e7c8c (grau)  volle Hoehe, 1 px
 ```
 
-Damit ist das Raster lesbar statt nur gestreift, und man sieht auf einen
-Blick, wo eine Phrase beginnt.
+Bei einem 4er-Takt ergibt das `rot - grau - grau - grau` und dann wieder von
+vorn. Laenge und Breite tragen **keine** Bedeutung mehr; zwei Merkmale fuer
+dieselbe Aussage waeren eine Fehlerquelle, sobald eines davon nicht mitgepflegt
+wird.
+
+Gezaehlt wird gegen `first_downbeat_index` des Tracks, nicht gegen den
+Bildausschnitt. Deshalb haengt das Muster am echten Beatgrid: beim Zoomen,
+Verschieben und waehrend der Wiedergabe behaelt derselbe Beat immer dieselbe
+Farbe. `tests/test_beat_grid_render.py` prueft das ueber 3000 Bilder, ueber
+sieben Zoomstufen und mit verschobenem Taktanfang.
+
+Die frueheren drei Stufen (`BEAT_LINE` / `BAR_LINE` / `PHRASE_LINE`) gelten
+weiterhin in der Uebersichtswellenform und der Kopfzeile - dort ist das Bild
+so stark gestaucht, dass die Farbe allein nicht mehr traegt.
 
 ## 6. Playhead
 

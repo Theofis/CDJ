@@ -99,10 +99,17 @@ PLAYHEAD = "#ffffff"
 #: eine klare Kante hat.
 PLAYHEAD_EDGE = "#050607"
 
-#: Beatgrid in drei Stufen: Beat, Taktanfang, Phrase (4 Takte).
+#: Beatgrid in drei Stufen: Beat, Taktanfang, Phrase (4 Takte). Noch in
+#: Gebrauch in der Uebersichtswellenform und der Kopfzeile.
 BEAT_LINE = "#39434f"
 BAR_LINE = "#6e7c8c"
 PHRASE_LINE = "#aab6c4"
+
+#: Beatgrid der vergroesserten laufenden Wellenform. Dort sind alle Linien
+#: gleich hoch und gleich breit; unterschieden wird **nur** ueber die Farbe:
+#: Beat 1 des Takts rot, die uebrigen grau.
+GRID_DOWNBEAT = RED
+GRID_BEAT = BAR_LINE
 
 LOOP_FILL = "#3d2f0a"
 LOOP_EDGE = "#e8c62f"

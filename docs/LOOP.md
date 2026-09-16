@@ -369,6 +369,48 @@ Loop-Ende zurueck, samt Ueberhang - so bleibt das Timing ueber viele
 Durchlaeufe stehen. Ohne Ausgabe macht `LoopEngine.check_boundary` dasselbe
 ueber die Wanduhr. Beide Wege nutzen dieselben Loop-Punkte aus `DeckState`.
 
+### Eine Grenze, kein exakter Treffer
+
+Die Loop-Punkte gehoeren dem `DeckState`. `Deck._sync_playback()` gibt sie
+bei **jeder** Zustandsaenderung an die Ausgabe weiter; die Ausgabe haelt
+keinen eigenen Loop und schaltet ihn auch nie von sich aus ab. Aendert sich
+Loop Out, gilt der neue Wert ab dem naechsten Audioblock - ein alter Wert
+bleibt nirgends liegen.
+
+Beim Umlauf kommt es nicht auf einen exakten Sample-Treffer an. Traegt ein
+Block von kurz vor Loop Out nach kurz danach, wird der ueberschrittene Teil
+ab Loop In fortgesetzt:
+
+```text
+loop_in = 10.000 s   loop_out = 12.000 s
+Block laeuft von 11.995 s nach 12.008 s
+->  neue Position 10.008 s      (nicht 12.000 s)
+```
+
+### Der Stillstand auf Loop Out
+
+Hier lag ein Fehler, der die Wiedergabe anhalten konnte. `render()` fragte
+`_frames_until_boundary()`, und das schnitt den Rest bis zur Grenze mit
+`int()` ab. Blieb weniger als ein ganzes Sample, kam `0` heraus - gelesen
+als "Grenze erreicht". Der Umlauf rechnete dann mit einem **negativen**
+Ueberhang, und `overshoot % length` bildete den exakt auf dieselbe Position
+zurueck. Die Stimme lief im Kreis, ohne ein Sample zu erzeugen:
+
+```text
+playing = true      loop_active = true      position = loop_out
+und die Position bewegt sich nie wieder
+```
+
+Erreichbar war das, sobald die Position nicht auf einem ganzen Sample lag -
+nach `seek_seconds()` auf einen krummen Zeitpunkt (Hot Cue, Beat Jump,
+quantisierter Loop-Eingang), nach einem Jog-Stoss, und bei **jedem** Tempo
+ausser genau 0 %. Darum trat er erst nach einigem Herumspielen auf.
+
+Die Regel jetzt: umgelaufen wird nur, wenn `_at_or_past_boundary()` gilt -
+damit ist der Ueberhang nie negativ. Sonst wird **mindestens ein Sample**
+gerendert. Jeder Durchgang bewegt also entweder die Position oder laeuft
+um; Stillstand ist nicht mehr moeglich.
+
 ## Tests
 
 `tests/test_loop.py` prueft die Loop-Engine allein (ein Test je Regel),
@@ -391,6 +433,17 @@ endet: 100 Wiederholungen ohne Drift, Laengenwechsel im Betrieb,
 Beatloop-Pads samt Loslassen, Pause/Play, 16 unbeteiligte Bedienschritte,
 acht Tempi von 60 bis 200 BPM, Loop-Enden abseits der Blockgrenze und die
 vier erlaubten Abschaltgruende.
+
+`tests/test_loop_playback.py` prueft die andere Frage: ob die **Wiedergabe**
+am Loop-Ende stehenbleiben kann. Der Stillstand oben wird direkt
+nachgestellt - Position einen Bruchteil eines Samples vor Loop Out, zehn
+verschiedene Bruchteile, neun Tempi. Dazu die Bedienfolgen, nach denen er
+beim Ausprobieren auftrat: halbieren und verdoppeln, Loop Out mehrfach
+verstellen (auch hinter den Playhead), alle acht Beatloop-Pads nacheinander,
+25-mal Exit und Reloop, Quantize an und aus, Jog im Adjust-Modus, Beat Jump
+und Cue am Loop, sowie ein Dauerlauf ueber 4000 Bloecke und ueber 1000
+Umlaeufe ohne Drift. Geprueft wird jedes Mal dieselbe Zusage: **kein**
+Audioblock laesst die Position unveraendert.
 
 `tests/test_cdj_operations.py` deckt die spaeter nachgezogenen
 Handbuchstellen ab: Loop Move samt Mitwandern der Wiedergabe und RELOOP,
