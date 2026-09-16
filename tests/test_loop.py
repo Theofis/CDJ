@@ -523,9 +523,29 @@ class BoundaryTests(unittest.TestCase):
         self.assertGreaterEqual(position, 1.0)
         self.assertLess(position, 3.0)
 
-    def test_before_the_start_the_position_is_pulled_in(self) -> None:
+    def test_before_the_start_wraps_to_the_end_with_the_overshoot(
+        self,
+    ) -> None:
+        """Rueckwaerts ist der Loop derselbe Ring wie vorwaerts.
+
+        Frueher wurde hier auf den Loop-Anfang gezogen. Dann blieb
+        Rueckwaertslauf am Loop-Anfang haengen, und ein Backspin trug die
+        Wiedergabe aus dem Loop heraus.
+        """
+        # Loop 1.0 bis 3.0: eine halbe Sekunde vor dem Anfang ist eine
+        # halbe Sekunde vor dem Ende.
         self.assertAlmostEqual(
-            self.engine.check_boundary(self.loop, 0.5), 1.0
+            self.engine.check_boundary(self.loop, 0.5), 2.5
+        )
+
+    def test_a_long_backward_overshoot_stays_inside(self) -> None:
+        position = self.engine.check_boundary(self.loop, -7.25)
+        self.assertGreaterEqual(position, 1.0)
+        self.assertLess(position, 3.0)
+
+    def test_exactly_one_length_back_lands_on_the_start(self) -> None:
+        self.assertAlmostEqual(
+            self.engine.check_boundary(self.loop, -1.0), 1.0
         )
 
     def test_an_inactive_loop_does_not_hold_anything(self) -> None:

@@ -552,12 +552,21 @@ class LoopEngine:
     # ------------------------------------------------------------------
 
     def check_boundary(self, loop: LoopState, position_s: float) -> float:
-        """Position an der Loop-Grenze zurueckfalten.
+        """Position in den Loop zurueckfalten - in beide Richtungen.
 
-        Am Loop-Ende geht es am Loop-Anfang weiter, und zwar mit dem
-        Ueberhang - so bleibt das Timing ueber viele Durchlaeufe stehen.
-        Vor dem Loop-Anfang (etwa nach einem Jog-Ruecklauf) wird auf den
-        Anfang gezogen.
+        Ein aktiver Loop ist ein Ring. Am Loop-Ende geht es am Loop-Anfang
+        weiter, vor dem Loop-Anfang am Loop-Ende - jeweils mit dem
+        Ueberhang. So bleibt das Timing ueber viele Durchlaeufe stehen, und
+        Rueckwaertslauf und Backspin bleiben im Loop, statt an einer Grenze
+        haengenzubleiben.
+
+        Eine einzige Rechnung deckt alle drei Faelle ab::
+
+            in_s + (position_s - in_s) % length
+
+        innerhalb des Loops ist der Rest die Position selbst; dahinter und
+        davor faltet das Modulo sie zurueck. Zwei getrennte Zweige waeren
+        zwei Stellen, an denen die Richtungen auseinanderlaufen koennten.
 
         Nur fuer den Transport ueber die Wanduhr. Mit Audioausgabe macht
         ``audio/engine.py`` dasselbe sample-genau.
@@ -569,8 +578,4 @@ class LoopEngine:
         length = out_s - in_s
         if length <= 0:
             return position_s
-        if position_s >= out_s:
-            return in_s + (position_s - out_s) % length
-        if position_s < in_s:
-            return in_s
-        return position_s
+        return in_s + (position_s - in_s) % length

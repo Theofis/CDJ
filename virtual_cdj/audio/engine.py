@@ -139,6 +139,11 @@ class DeckVoice:
         # den ersten Audio-Block warten.
         self._loaded_frames = 0
         self._loaded_bytes = 0
+        # Was der Steuer-Thread zuletzt als Loop geschickt hat. Nur seine
+        # eigene Sicht - der Audio-Thread fuehrt seinen Loop getrennt.
+        self._view_loop_active = False
+        self._view_loop_start = 0
+        self._view_loop_end = 0
 
     # ------------------------------------------------------------------
     # Steuer-Thread
@@ -153,11 +158,15 @@ class DeckVoice:
         self._loaded_bytes = int(array.nbytes)
         self.position_frames = 0.0
         self.reached_end = False
+        # Ein neuer Track hat keinen Loop - der Audio-Thread setzt ihn bei
+        # ``_Load`` ebenfalls zurueck. Beide Sichten bleiben so einig.
+        self._set_loop_view(False, 0, 0)
         self._commands.put(_Load(array))
 
     def unload(self) -> None:
         self._loaded_frames = 0
         self._loaded_bytes = 0
+        self._set_loop_view(False, 0, 0)
         self._commands.put(_Load(np.zeros((0, CHANNELS), dtype=DTYPE)))
 
     def set_playing(self, playing: bool) -> None:
@@ -174,13 +183,14 @@ class DeckVoice:
         self._commands.put(_Seek(frame))
 
     def nudge_seconds(self, seconds: float) -> None:
-        """Position relativ verschieben - fuer Jog und Pitch Bend."""
+        """Position relativ verschieben - fuer Jog, Backspin und Pitch Bend.
+
+        Ein aktiver Loop gilt auch hier: es wird umgelaufen statt hinaus-
+        zulaufen, in beide Richtungen. Sonst traegt ein Backspin die
+        Wiedergabe aus dem Loop heraus, obwohl niemand ihn verlassen hat.
+        """
         frames = float(seconds) * self.sample_rate
-        self.position_frames = _clamp(
-            self.position_frames + frames,
-            0.0,
-            max(0.0, self._loaded_frames - 1.0),
-        )
+        self.position_frames = self._contained(self.position_frames + frames)
         self._commands.put(_Nudge(frames))
 
     def set_speed(self, speed: float) -> None:
@@ -190,6 +200,7 @@ class DeckVoice:
         self, active: bool, start_s: float | None, end_s: float | None
     ) -> None:
         if start_s is None or end_s is None:
+            self._set_loop_view(False, 0, 0)
             self._commands.put(_SetLoop(False, 0, 0))
             return
         start = int(round(start_s * self.sample_rate))
@@ -198,7 +209,38 @@ class DeckVoice:
         # darf einen vom Deck gesetzten Loop nicht stillschweigend
         # abschalten - sonst weichen Anzeige und Ton voneinander ab.
         end = max(end, start + MIN_LOOP_FRAMES)
+        self._set_loop_view(bool(active), start, end)
         self._commands.put(_SetLoop(bool(active), start, end))
+
+    # -- Sicht des Steuer-Threads auf den Loop -----------------------------
+    #
+    # ``_loop_active``/``_loop_start``/``_loop_end`` gehoeren dem Audio-
+    # Thread und duerfen von hier nicht gelesen werden. Der Steuer-Thread
+    # setzt den Loop aber selbst - er darf sich also merken, was er
+    # geschickt hat, und ``nudge_seconds`` sofort danach richten. Sonst
+    # zeigte die Oberflaeche bis zum naechsten Audioblock eine Position
+    # ausserhalb des Loops.
+
+    def _set_loop_view(self, active: bool, start: int, end: int) -> None:
+        self._view_loop_active = active
+        self._view_loop_start = start
+        self._view_loop_end = end
+
+    def _contained(self, position: float) -> float:
+        """Position in ihre Grenzen zwingen - Loop vor Trackrand.
+
+        Dieselbe modulare Rechnung wie ``LoopEngine.check_boundary`` und
+        ``_wrap_at_boundary``: der Loop ist ein Ring, vorwaerts wie
+        rueckwaerts.
+        """
+        if self._view_loop_active:
+            length = float(self._view_loop_end - self._view_loop_start)
+            if length > 0:
+                return (
+                    self._view_loop_start
+                    + (position - self._view_loop_start) % length
+                )
+        return _clamp(position, 0.0, max(0.0, self._loaded_frames - 1.0))
 
     def set_gain(self, gain: float) -> None:
         self._commands.put(_SetGain(float(gain)))
@@ -252,10 +294,9 @@ class DeckVoice:
                 )
                 self.reached_end = False
             elif isinstance(command, _Nudge):
-                self._position = _clamp(
-                    self._position + command.frames,
-                    0.0,
-                    max(0.0, self._total_frames - 1.0),
+                # Jog und Backspin bleiben im Loop, statt ihn zu verlassen.
+                self._position = self._wrap_into_loop(
+                    self._position + command.frames
                 )
             elif isinstance(command, _SetSpeed):
                 self._speed = command.speed
@@ -330,6 +371,21 @@ class DeckVoice:
         return True
 
     # -- Grenzen ----------------------------------------------------------
+
+    def _wrap_into_loop(self, position: float) -> float:
+        """Im Audio-Thread: Position in den aktiven Loop zurueckfalten.
+
+        Gegenstueck zu ``_contained`` auf der Steuerseite - dieselbe
+        Rechnung, nur auf dem Loop, den der Audio-Thread wirklich fuehrt.
+        """
+        if self._loop_active:
+            length = float(self._loop_end - self._loop_start)
+            if length > 0:
+                return (
+                    self._loop_start
+                    + (position - self._loop_start) % length
+                )
+        return _clamp(position, 0.0, max(0.0, self._total_frames - 1.0))
 
     def _boundary(self) -> float:
         """Naechste Grenze in Quell-Samples, in Laufrichtung."""

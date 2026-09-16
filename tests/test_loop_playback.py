@@ -31,6 +31,7 @@ from virtual_cdj.deck.commands import CommandType, command
 from virtual_cdj.deck.engine import Deck
 from virtual_cdj.deck.state import (
     BeatGrid,
+    Direction,
     LoopExitReason,
     PadMode,
     PlayState,
@@ -294,6 +295,134 @@ class LoopOutAdjustTests(unittest.TestCase):
         )
 
 
+class ReverseTests(unittest.TestCase):
+    """Rueckwaerts ist der Loop derselbe Ring wie vorwaerts."""
+
+    def test_reverse_playback_wraps_from_loop_in_to_loop_out(self) -> None:
+        v = Voice(speed=-1.0)
+        in_s, out_s = 10.0, 12.0
+        v.loop(in_s, out_s)
+        # 100 Samples nach dem Anfang: ein Block von 512 laeuft 412 darueber.
+        v.seek(in_s + 100 / SR)
+        v.block()
+        expected = out_s - (BLOCK - 100) / SR
+        self.assertAlmostEqual(v.position, expected, places=6)
+
+    def test_reverse_playback_never_stalls_on_loop_in(self) -> None:
+        v = Voice(speed=-1.0)
+        v.loop(10.0, 12.0)
+        v.seek(10.0 + 0.5 / SR)
+        before = v.frames
+        v.block()
+        self.assertNotAlmostEqual(
+            v.frames, before, places=6,
+            msg="Die Position haengt am Loop-Anfang",
+        )
+
+    def test_reverse_stays_inside_the_loop_for_a_long_run(self) -> None:
+        v = Voice(speed=-1.0)
+        v.loop(10.0, 12.0)
+        v.seek(11.0)
+        for _ in range(800):
+            v.block()
+            self.assertTrue(
+                10.0 - 1e-6 <= v.position < 12.0 + 1e-6,
+                f"{v.position:.6f} liegt ausserhalb",
+            )
+
+    def test_no_reverse_tempo_ever_freezes_the_position(self) -> None:
+        for percent in (-16.0, -6.0, 0.0, 6.0, 16.0):
+            speed = -(1.0 + percent / 100.0)
+            with self.subTest(tempo=f"{percent:+g} %"):
+                v = Voice(speed=speed)
+                v.loop(10.0, 12.0)
+                v.seek(11.0)
+                seen = []
+                for _ in range(400):
+                    v.block()
+                    seen.append(v.frames)
+                frozen = [
+                    i for i in range(1, len(seen))
+                    if abs(seen[i] - seen[i - 1]) < 1e-9
+                ]
+                self.assertEqual(frozen, [])
+
+    def test_reverse_keeps_the_phase_over_many_wraps(self) -> None:
+        v = Voice(speed=-1.0)
+        in_frames, length_frames = 10 * SR, 1920
+        v.loop(in_frames / SR, (in_frames + length_frames) / SR)
+        v.seek(in_frames / SR)
+        blocks = 2000
+        for _ in range(blocks):
+            v.block()
+        expected = in_frames + (-(blocks * BLOCK)) % length_frames
+        self.assertAlmostEqual(v.frames, expected, places=3)
+        self.assertGreater(v.voice.loop_wraps, 500)
+
+
+class BackspinTests(unittest.TestCase):
+    """Ein Backspin traegt die Wiedergabe nicht aus dem Loop heraus."""
+
+    def test_a_backspin_past_loop_in_wraps_to_the_end(self) -> None:
+        v = Voice()
+        in_s, out_s = 10.0, 12.0
+        v.loop(in_s, out_s)
+        v.seek(in_s + 0.25)
+        # Eine halbe Sekunde zurueckreissen - 0.25 s vor den Loop-Anfang.
+        v.voice.nudge_seconds(-0.5)
+        self.assertAlmostEqual(v.position, out_s - 0.25, places=6)
+
+    def test_the_deck_sees_it_at_once_without_a_block(self) -> None:
+        """Ohne gerenderten Block muss die Position schon stimmen.
+
+        ``position_frames`` wird vom Steuer-Thread sofort mitgeschrieben;
+        sonst zeigte die Oberflaeche bis zum naechsten Audioblock eine
+        Position ausserhalb des Loops.
+        """
+        v = Voice()
+        v.loop(10.0, 12.0)
+        v.seek(10.1)
+        v.voice.nudge_seconds(-0.4)
+        self.assertAlmostEqual(v.position, 11.7, places=6)
+
+    def test_a_violent_backspin_over_many_loop_lengths(self) -> None:
+        v = Voice()
+        v.loop(10.0, 12.0)
+        v.seek(11.0)
+        v.voice.nudge_seconds(-9.0)  # viereinhalb Loop-Laengen zurueck
+        self.assertTrue(
+            10.0 <= v.position < 12.0,
+            f"{v.position:.6f} liegt ausserhalb",
+        )
+        self.assertAlmostEqual(v.position, 10.0, places=6)
+
+    def test_a_forward_spin_also_stays_inside(self) -> None:
+        v = Voice()
+        v.loop(10.0, 12.0)
+        v.seek(11.0)
+        v.voice.nudge_seconds(+7.0)
+        self.assertTrue(10.0 <= v.position < 12.0)
+
+    def test_repeated_backspins_keep_playing(self) -> None:
+        v = Voice()
+        v.loop(10.0, 12.0)
+        v.seek(11.0)
+        for step in range(120):
+            v.voice.nudge_seconds(-0.37 - (step % 5) * 0.11)
+            v.block()
+            self.assertTrue(
+                10.0 - 1e-6 <= v.position < 12.0 + 1e-6,
+                f"Schritt {step}: {v.position:.6f} liegt ausserhalb",
+            )
+
+    def test_without_a_loop_a_backspin_still_stops_at_the_start(self) -> None:
+        """Ohne Loop bleibt es beim alten Verhalten: Trackrand begrenzt."""
+        v = Voice()
+        v.seek(1.0)
+        v.voice.nudge_seconds(-9.0)
+        self.assertAlmostEqual(v.position, 0.0, places=6)
+
+
 class JogInsideLoopTests(unittest.TestCase):
     """Ein Jog-Stoss macht die Position gebrochen - auch das darf nicht
     stehen bleiben."""
@@ -528,6 +657,170 @@ class DeckLoopTests(unittest.TestCase):
         self.assertAlmostEqual(rig.loop.in_s, in_s, places=9)
         self.assertAlmostEqual(rig.loop.out_s, out_s, places=9)
         self.assert_moving(rig.blocks(100), "nach Reloop")
+
+
+class DeckReverseAndBackspinTests(unittest.TestCase):
+    """Rueckwaerts und Backspin am Deck - mit und ohne Audioausgabe."""
+
+    def rig(self) -> DeckRig:
+        rig = DeckRig()
+        rig.send(CommandType.SEEK, position_s=10.0)
+        rig.play()
+        rig.send(CommandType.BEAT_LOOP, beats=4.0)
+        return rig
+
+    def bounds(self, rig: DeckRig) -> tuple[float, float]:
+        loop = rig.loop
+        assert loop.in_s is not None and loop.out_s is not None
+        return loop.in_s, loop.out_s
+
+    def spin(self, rig: DeckRig, revolutions: float) -> None:
+        """Am Jogwheel reissen - Platte beruehrt, also Scratch."""
+        rig.send(CommandType.JOG_TOUCH, pressed=True)
+        rig.send(
+            CommandType.JOG_MOVE, delta=int(revolutions * 800),
+            velocity=0.0, direction="CCW" if revolutions < 0 else "CW",
+            touched=True, ticks_per_rev=800,
+        )
+
+    def test_reverse_playback_stays_in_the_loop(self) -> None:
+        rig = self.rig()
+        in_s, out_s = self.bounds(rig)
+        rig.send(CommandType.DIRECTION, position=Direction.REV)
+        seen = rig.blocks(600)
+        for position in seen:
+            self.assertTrue(
+                in_s - 1e-6 <= position < out_s + 1e-6,
+                f"{position:.6f} liegt ausserhalb [{in_s}, {out_s})",
+            )
+        self.assertTrue(rig.loop.active)
+        frozen = [
+            i for i in range(1, len(seen))
+            if abs(seen[i] - seen[i - 1]) < 1e-9
+        ]
+        self.assertEqual(frozen, [], "Rueckwaerts steht die Position still")
+
+    def test_reverse_never_rests_on_loop_in(self) -> None:
+        rig = self.rig()
+        in_s, _ = self.bounds(rig)
+        rig.send(CommandType.DIRECTION, position=Direction.REV)
+        for position in rig.blocks(600):
+            self.assertNotAlmostEqual(
+                position, in_s, places=6,
+                msg="Die Position liegt genau auf Loop In",
+            )
+
+    def test_a_backspin_stays_in_the_loop(self) -> None:
+        rig = self.rig()
+        in_s, out_s = self.bounds(rig)
+        rig.blocks(10)
+        self.spin(rig, -6.0)  # sechs Umdrehungen zurueck
+        position = rig.deck.state.position_s
+        self.assertTrue(
+            in_s - 1e-6 <= position < out_s + 1e-6,
+            f"Backspin landet bei {position:.6f}, Loop ist "
+            f"[{in_s:.6f}, {out_s:.6f})",
+        )
+        self.assertTrue(rig.loop.active, "Der Backspin hat den Loop beendet")
+
+    def test_many_backspins_keep_the_loop(self) -> None:
+        rig = self.rig()
+        in_s, out_s = self.bounds(rig)
+        for step in range(60):
+            self.spin(rig, -3.0 if step % 2 else +2.5)
+            rig.blocks(6)
+            position = rig.deck.state.position_s
+            self.assertTrue(
+                in_s - 1e-6 <= position < out_s + 1e-6,
+                f"Schritt {step}: {position:.6f} liegt ausserhalb",
+            )
+            self.assertTrue(rig.loop.active, f"Schritt {step}: Loop weg")
+        self.assertIsNone(rig.loop.exit_reason)
+
+    def test_reverse_and_backspin_together(self) -> None:
+        rig = self.rig()
+        in_s, out_s = self.bounds(rig)
+        rig.send(CommandType.DIRECTION, position=Direction.REV)
+        for step in range(40):
+            self.spin(rig, -2.0 if step % 3 else +1.5)
+            for position in rig.blocks(8):
+                self.assertTrue(
+                    in_s - 1e-6 <= position < out_s + 1e-6,
+                    f"Schritt {step}: {position:.6f} liegt ausserhalb",
+                )
+        self.assertTrue(rig.loop.active)
+
+
+class ClockPathReverseTests(unittest.TestCase):
+    """Derselbe Nachweis ohne Audioausgabe - Transport ueber die Wanduhr."""
+
+    class Clock:
+        def __init__(self) -> None:
+            self.now = 0.0
+
+        def __call__(self) -> float:
+            return self.now
+
+    def rig(self) -> tuple[Deck, "ClockPathReverseTests.Clock"]:
+        clock = self.Clock()
+        deck = Deck(1, time_source=clock)
+        deck.load_track(
+            TrackInfo(
+                track_id="t", title="T", duration_s=DURATION_S,
+                original_bpm=120.0,
+                beat_grid=BeatGrid(
+                    first_beat_s=0.0, bpm=120.0, beats_per_bar=4
+                ),
+            )
+        )
+        deck.execute(command(CommandType.SEEK, 1, position_s=10.0))
+        deck.execute(command(CommandType.PLAY_PAUSE, 1))
+        deck.execute(command(CommandType.BEAT_LOOP, 1, beats=4.0))
+        return deck, clock
+
+    def test_reverse_over_the_clock_stays_in_the_loop(self) -> None:
+        deck, clock = self.rig()
+        loop = deck.state.loop
+        in_s, out_s = loop.in_s, loop.out_s
+        assert in_s is not None and out_s is not None
+        deck.execute(
+            command(CommandType.DIRECTION, 1, position=Direction.REV)
+        )
+        seen = []
+        for _ in range(500):
+            clock.now += 0.016
+            deck.tick()
+            seen.append(deck.state.position_s)
+        for position in seen:
+            self.assertTrue(
+                in_s - 1e-6 <= position < out_s + 1e-6,
+                f"{position:.6f} liegt ausserhalb [{in_s}, {out_s})",
+            )
+        frozen = [
+            i for i in range(1, len(seen))
+            if abs(seen[i] - seen[i - 1]) < 1e-9
+        ]
+        self.assertEqual(frozen, [], "Die Position steht still")
+        self.assertTrue(deck.state.loop.active)
+
+    def test_a_backspin_over_the_clock_stays_in_the_loop(self) -> None:
+        deck, clock = self.rig()
+        loop = deck.state.loop
+        in_s, out_s = loop.in_s, loop.out_s
+        assert in_s is not None and out_s is not None
+        deck.execute(command(CommandType.JOG_TOUCH, 1, pressed=True))
+        deck.execute(
+            command(
+                CommandType.JOG_MOVE, 1, delta=-8 * 800, velocity=0.0,
+                direction="CCW", touched=True, ticks_per_rev=800,
+            )
+        )
+        position = deck.state.position_s
+        self.assertTrue(
+            in_s - 1e-6 <= position < out_s + 1e-6,
+            f"Backspin landet bei {position:.6f}",
+        )
+        self.assertTrue(deck.state.loop.active)
 
 
 class SingleAuthorityTests(unittest.TestCase):

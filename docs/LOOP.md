@@ -411,6 +411,37 @@ damit ist der Ueberhang nie negativ. Sonst wird **mindestens ein Sample**
 gerendert. Jeder Durchgang bewegt also entweder die Position oder laeuft
 um; Stillstand ist nicht mehr moeglich.
 
+### Rueckwaerts und Backspin
+
+Ein aktiver Loop ist ein **Ring**, keine Strecke mit zwei Enden. Vorwaerts
+geht es am Loop-Ende beim Loop-Anfang weiter, rueckwaerts am Loop-Anfang
+beim Loop-Ende - beide Male mit dem Ueberhang. Rueckwaertslauf und
+Backspin bleiben damit im Loop, statt an einer Grenze haengenzubleiben oder
+aus ihm herauszulaufen.
+
+Frueher wurde vor dem Loop-Anfang auf den Anfang **gezogen**. Das hatte
+zwei Folgen: Rueckwaertslauf blieb auf Loop In stehen - dasselbe Bild wie
+der Stillstand oben, nur am anderen Ende -, und mit Audioausgabe trug ein
+Backspin die Wiedergabe ganz aus dem Loop heraus, weil `nudge_seconds()`
+den Loop gar nicht kannte und nur am Trackrand begrenzte.
+
+Dieselbe modulare Rechnung steht jetzt an genau drei Stellen, und alle drei
+sagen dasselbe:
+
+```text
+LoopEngine.check_boundary   Transport ueber die Wanduhr
+DeckVoice._wrap_into_loop   Jog/Backspin im Audio-Thread
+DeckVoice._contained        Sicht des Steuer-Threads, fuer die Anzeige
+```
+
+Die dritte ist noetig, weil `position_frames` sofort nach `nudge_seconds()`
+gelesen wird. Ohne sie zeigte die Oberflaeche bis zum naechsten Audioblock
+eine Position ausserhalb des Loops. Der Audio-Thread fuehrt seinen Loop
+weiterhin getrennt; der Steuer-Thread merkt sich nur, was er selbst
+geschickt hat.
+
+Ohne aktiven Loop bleibt es beim alten Verhalten: der Trackrand begrenzt.
+
 ## Tests
 
 `tests/test_loop.py` prueft die Loop-Engine allein (ein Test je Regel),
@@ -444,6 +475,12 @@ verstellen (auch hinter den Playhead), alle acht Beatloop-Pads nacheinander,
 und Cue am Loop, sowie ein Dauerlauf ueber 4000 Bloecke und ueber 1000
 Umlaeufe ohne Drift. Geprueft wird jedes Mal dieselbe Zusage: **kein**
 Audioblock laesst die Position unveraendert.
+
+Dazu die Gegenrichtung: Rueckwaertslauf bei fuenf Tempi, Umlauf von Loop In
+nach Loop Out mit Ueberhang, 500+ Umlaeufe rueckwaerts ohne Drift, Backspin
+ueber mehrere Loop-Laengen, 120 Backspins nacheinander, Rueckwaerts und
+Backspin gleichzeitig - je einmal ueber die Audioausgabe und einmal ueber
+die Wanduhr. Ohne Loop muss ein Backspin weiterhin am Trackanfang halten.
 
 `tests/test_cdj_operations.py` deckt die spaeter nachgezogenen
 Handbuchstellen ab: Loop Move samt Mitwandern der Wiedergabe und RELOOP,

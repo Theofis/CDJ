@@ -50,6 +50,7 @@ class MenuPage(Page):
         self.canvas.bind("<Button-1>", self._on_click)
         self.canvas.bind("<Configure>", lambda _e: self.refresh())
         self._rows: list[tuple[float, float, object]] = []
+        self._back_hit: tuple[float, float, float, float] | None = None
 
     # ------------------------------------------------------------------
 
@@ -104,6 +105,11 @@ class MenuPage(Page):
         return self.modes.set_mode(target)  # type: ignore[arg-type]
 
     def _on_click(self, event: tk.Event) -> None:
+        if self._back_hit is not None:
+            left, top, right, bottom = self._back_hit
+            if left <= event.x <= right and top <= event.y <= bottom:
+                self.back()
+                return
         for index, (top, bottom, target) in enumerate(self._rows):
             if top <= event.y <= bottom:
                 self.selected = index
@@ -164,6 +170,7 @@ class MenuPage(Page):
         canvas = self.canvas
         canvas.delete("all")
         self._rows.clear()
+        self._back_hit = None
         m = theme.DEFAULT_METRICS
         width = max(1, canvas.winfo_width())
 
@@ -172,15 +179,25 @@ class MenuPage(Page):
             m.px(24), m.px(22), text=title, anchor="w",
             fill=theme.TEXT, font=m.font(16, "bold"),
         )
-        canvas.create_text(
-            width - m.px(24), m.px(24),
-            text=(
-                "F1 Hauptmenue   Drehregler waehlen"
-                if self.operating_view
-                else "F1 zurueck   Drehregler waehlen"
-            ),
-            anchor="e", fill=theme.TEXT_MUTED, font=m.font(8),
-        )
+        if self.operating_view:
+            left, right = width - m.px(180), width - m.px(24)
+            top, bottom = m.px(9), m.px(35)
+            canvas.create_rectangle(
+                left, top, right, bottom,
+                fill=theme.PANEL_HI, outline=theme.BORDER,
+            )
+            canvas.create_text(
+                (left + right) / 2, (top + bottom) / 2,
+                text="ZURUECK ZUM MENUE", anchor="center",
+                fill=theme.TEXT_SECOND, font=m.font(8),
+            )
+            self._back_hit = (left, top, right, bottom)
+        else:
+            canvas.create_text(
+                width - m.px(24), m.px(24),
+                text="F1 zurueck   Drehregler waehlen",
+                anchor="e", fill=theme.TEXT_MUTED, font=m.font(8),
+            )
 
         y = m.px(56)
         row_h = m.px(ROW_H)

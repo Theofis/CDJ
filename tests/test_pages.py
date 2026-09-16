@@ -237,6 +237,22 @@ class MenuPageTests(unittest.TestCase):
         self.page._on_click(Click())
         self.assertIs(self.rig.modes.mode, mode)
 
+    def test_operating_mode_view_has_a_button_back_to_the_menu(self) -> None:
+        self.page.activate(1)
+        self.assertTrue(self.page.operating_view)
+        self.page.refresh()
+        hit = self.page._back_hit
+        self.assertIsNotNone(hit)
+        assert hit is not None
+
+        class Click:
+            x = (hit[0] + hit[2]) / 2
+            y = (hit[1] + hit[3]) / 2
+
+        self.page._on_click(Click())
+        self.assertFalse(self.page.operating_view)
+        self.assertEqual(self.page.title, "MENUE")
+
 
 @unittest.skipUnless(TK_AVAILABLE, "keine Tk-Anzeige verfuegbar")
 class TestPageTests(unittest.TestCase):
