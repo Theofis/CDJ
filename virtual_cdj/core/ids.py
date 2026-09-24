@@ -40,6 +40,12 @@ BROWSE_PRESS = "BROWSE_PRESS"
 # --- Medien ----------------------------------------------------------------
 USB_STOP = "USB_STOP"
 
+# --- Zeitanzeige -----------------------------------------------------------
+#: Doppelt belegter Taster: kurz = Zeitanzeige umschalten, lang = AUTO CUE
+#: ein/aus. Beide Bedeutungen sitzen auf derselben Taste, so wie am Geraet.
+#: Die Unterscheidung macht ``deck/mapping.py``, nicht die Hardware.
+TIME_MODE = "TIME_MODE"
+
 # --- Modifikator -----------------------------------------------------------
 #: Quadratischer Taster links neben der Pad-Reihe.
 SHIFT = "SHIFT"

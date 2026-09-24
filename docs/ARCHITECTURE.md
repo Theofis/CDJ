@@ -89,6 +89,30 @@ Die Oberflaeche greift nie selbst auf eine Datei oder Datenbank des Sticks
 zu. Sie kennt nur `MediaLibrary`. Geschrieben wird auf den Stick nichts:
 in `media_library/` gibt es keinen Schreibpfad.
 
+Externe Player bilden einen dritten, vom lokalen Deck getrennten Strang:
+
+```text
+Simulator oder echtes PRO DJ LINK (read-only)
+        |
+prolink/provider.py       ein Vertrag fuer Simulator, Real und Null
+        |
+PlayerState / BeatEvent   normalisierte Live-Daten
+        |
+sync/master.py            MasterManager -> MasterState
+        |
+sync/engine.py            SyncEngine -> SyncTarget (kein Audiozugriff)
+        |
+CdjApplication            Composition Root / GUI-Thread-Grenze
+        |
+MasterDeckView            flache Sicht fuer die bestehende GUI
+```
+
+Ein RemotePlayer ist kein lokales Deck: er besitzt weder AudioEngine noch
+Jog-/Cue-/Loop-Transport. Netzwerkthreads stellen der GUI niemals direkt
+Zustand zu; der Provider puffert und `CdjApplication.tick()` verteilt im
+Anwendungsthread. Details und Startbefehle: [PROLINK_PHASE1.md](PROLINK_PHASE1.md)
+und [PROLINK_PHASE2.md](PROLINK_PHASE2.md).
+
 Noch nicht angebunden und deshalb auch nicht vorgetaeuscht: Beatgrid,
 Waveform und Cues aus den ANLZ-Dateien, SEARCH, TRACK FILTER, TAG LIST.
 Siehe [rekordbox-usb-import.md](rekordbox-usb-import.md).
@@ -142,6 +166,13 @@ Aenderung in Debug-Ansicht und Input-Monitor.
 | `media_library/sources.py` | Bruecke: Datentraeger -> `SourceInfo`/`TrackInfo` |
 | `media_library/rekordbox/` | `export.pdb` und die ANLZ-Dateien, **nur lesend** |
 | `cdj_ui/` | CDJ-Bildschirmoberflaeche, ein Modul je Bereich |
+| `prolink/models.py` | `PlayerState`, `BeatEvent`, getrennte TrackMetadata/TrackAnalysis und `RemotePlayer` |
+| `prolink/provider.py` | quellenunabhaengiger Provider-Vertrag und Nullquelle |
+| `prolink/simulator_provider.py` | reconnectender TCP-Adapter; Zustellung erst in `poll()` |
+| `prolink/packets.py` | belegte, reine Decoder fuer passive UDP-Pakete; kein Encoder/Senden |
+| `prolink/real_provider.py` | passiver UDP-Empfaenger, stale/reconnect und Raw-Diagnose; Zustellung in `poll()` |
+| `sync/` | `MasterManager`, `MasterState`, `SyncEngine`, `SyncTarget`; kein Audio und keine GUI |
+| `simulator/` | separat startbarer FakePlayer, localhost-Server und Entwicklerfenster |
 
 ## Das Ereignis
 

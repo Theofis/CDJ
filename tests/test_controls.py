@@ -78,10 +78,23 @@ class ComponentListTests(unittest.TestCase):
             controls.get(ids.DIRECTION).y,
         )
 
-    def test_no_auto_cue_anywhere(self) -> None:
+    def test_auto_cue_sits_on_the_time_mode_button_only(self) -> None:
+        """AUTO CUE hat keine eigene Taste - es ist der lange Druck.
+
+        Frueher stand hier, dass AUTO CUE nirgends vorkommen darf: im
+        Referenzbild war kein solcher Taster zu erkennen. Der Erbauer hat
+        bestaetigt, dass das Geraet den doppelt beschrifteten Taster
+        ``TIME MODE / AUTO CUE`` besitzt. Geblieben ist die eigentliche
+        Aussage: es gibt genau **einen** Taster dafuer, und AUTO CUE ist
+        keine eigene Taste.
+        """
+        with_auto_cue = [
+            control for control in controls.CONTROL_LIST
+            if "auto cue" in control.label.lower()
+        ]
+        self.assertEqual([c.id for c in with_auto_cue], [ids.TIME_MODE])
         for control in controls.CONTROL_LIST:
             self.assertNotIn("AUTO_CUE", control.id)
-            self.assertNotIn("auto cue", control.label.lower())
 
     def test_jog_has_its_own_type(self) -> None:
         self.assertIs(controls.get(ids.JOG_MOVE).type, ControlType.JOG)

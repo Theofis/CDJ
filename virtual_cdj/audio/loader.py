@@ -5,10 +5,27 @@ die Samples fuer die Audio-Stimme. Diese Schicht ist die Bruecke zwischen der
 Audio- und der Deck-Schicht.
 
 Laeuft im File-/Analyse-Worker, niemals im GUI- oder Audio-Thread.
+
+Zwei Schritte, nicht einer
+--------------------------
+::
+
+    Track laden
+      |
+      +-- Audioanalyse   Waveform, Peaks, BPM, Tonart   <- muss klappen
+      |
+      +-- Metadaten      Titel, Interpret, Genre, ...   <- darf ausfallen
+
+Der zweite Schritt ist **optional**. Faellt er aus, ist der Track trotzdem
+geladen und analysiert; die fehlenden Felder bleiben leer, und der Grund
+steht in ``LoadedTrack.metadata_error``. Warum das noetig ist, steht in
+``metadata.py`` - kurz: das Tag-Lesen hat den ganzen Prozess mitgenommen.
 """
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,8 +36,11 @@ from .analysis.analyzer import TrackAnalysis, TrackAnalyzer
 from .cache import AnalysisCache, CacheKey
 from .decoder import AudioMetadata, open_decoder
 from .format import ENGINE_SAMPLE_RATE, AudioBuffer
+from .metadata import TagReadResult, TrackTags, read_tags
 from .metrics import AnalysisMetrics
 from .resample import resample
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -37,6 +57,14 @@ class LoadedTrack:
     analysis: TrackAnalysis | None = None
     metadata: AudioMetadata | None = None
     from_cache: bool = False
+    #: Grund, warum die Datei-Tags nicht gelesen werden konnten. Leer
+    #: heisst: gelesen, oder gar nicht noetig gewesen. Ein Wert hier ist
+    #: **kein** Ladefehler - die Analyse ist trotzdem vollstaendig.
+    metadata_error: str = ""
+
+    @property
+    def has_metadata_error(self) -> bool:
+        return bool(self.metadata_error)
 
     @property
     def samples(self) -> np.ndarray:
@@ -45,42 +73,6 @@ class LoadedTrack:
     @property
     def is_analysed(self) -> bool:
         return self.analysis is not None
-
-
-def _read_tags(path: Path) -> dict[str, str]:
-    """Titel, Interpret und Co. aus den Datei-Tags lesen."""
-    tags = {
-        "title": "",
-        "artist": "",
-        "album": "",
-        "genre": "",
-        "label": "",
-    }
-    try:
-        import mutagen
-    except ImportError:  # pragma: no cover - mutagen ist Abhaengigkeit
-        return tags
-
-    try:
-        handle = mutagen.File(str(path), easy=True)
-    except Exception:
-        return tags
-    if handle is None:
-        return tags
-
-    def first(*keys: str) -> str:
-        for key in keys:
-            value = handle.get(key)
-            if value:
-                return str(value[0]) if isinstance(value, list) else str(value)
-        return ""
-
-    tags["title"] = first("title")
-    tags["artist"] = first("artist", "albumartist")
-    tags["album"] = first("album")
-    tags["genre"] = first("genre")
-    tags["label"] = first("organization", "label")
-    return tags
 
 
 def _to_waveform_set(analysis: TrackAnalysis) -> WaveformSet | None:
@@ -133,14 +125,31 @@ class TrackLoader:
         self.analyzer = analyzer if analyzer is not None else TrackAnalyzer()
         self.engine_sample_rate = engine_sample_rate
         self.metrics = metrics if metrics is not None else AnalysisMetrics()
+        #: Austauschbar, damit Tests ohne Prozessstart auskommen.
+        self.tag_reader: Callable[[Path], TagReadResult] = read_tags
+        #: Schon gelesene Tags je Datei. Der Leseprozess kostet rund
+        #: 135 ms; zweimal dieselbe Datei muss das nicht zahlen. Nur fuer
+        #: diese Sitzung, nichts wird auf die Platte geschrieben.
+        self._tag_cache: dict[str, TrackTags] = {}
 
     # ------------------------------------------------------------------
 
-    def load(self, path: str | Path, *, use_cache: bool = True) -> LoadedTrack:
+    def load(
+        self,
+        path: str | Path,
+        *,
+        use_cache: bool = True,
+        known: TrackTags | None = None,
+    ) -> LoadedTrack:
         """Track vollstaendig laden.
 
         Reihenfolge: dekodieren -> auf Engine-Rate bringen -> Analyse aus dem
-        Cache oder neu berechnen -> ``TrackInfo`` bauen.
+        Cache oder neu berechnen -> Metadaten ergaenzen -> ``TrackInfo``.
+
+        ``known`` sind bereits bekannte Metadaten, etwa die aus
+        ``export.pdb`` gelesenen eines rekordbox-Sticks. Sie haben
+        **Vorrang**: sie werden nicht durch Dateitags ersetzt, und sind
+        sie vollstaendig, wird die Datei dafuer gar nicht angefasst.
         """
         source = Path(path)
         decoder = open_decoder(source)
@@ -166,14 +175,19 @@ class TrackLoader:
                 except OSError:  # pragma: no cover - Platte voll o. ae.
                     self.cache.stats.errors += 1
 
-        tags = _read_tags(source)
+        # Erst hier - nach der Analyse. Alles Folgende kann ausfallen,
+        # ohne dass das Ergebnis oben verloren geht.
+        tags, metadata_error = self._metadata(source, key.digest, known)
+
         info = TrackInfo(
             track_id=key.digest[:16],
-            title=tags["title"] or source.stem,
-            artist=tags["artist"],
-            album=tags["album"],
-            genre=tags["genre"],
-            label=tags["label"],
+            # Der Dateiname ist der Rueckfall fuer den Titel: er ist kein
+            # erfundener Wert, sondern der einzige, der immer da ist.
+            title=tags.title or source.stem,
+            artist=tags.artist,
+            album=tags.album,
+            genre=tags.genre,
+            label=tags.label,
             duration_s=buffer.duration_s,
             original_bpm=analysis.tempo.bpm,
             key=analysis.key.camelot,
@@ -192,7 +206,52 @@ class TrackLoader:
             analysis=analysis,
             metadata=metadata,
             from_cache=from_cache,
+            metadata_error=metadata_error,
         )
+
+    # ------------------------------------------------------------------
+
+    def _metadata(
+        self, source: Path, digest: str, known: TrackTags | None
+    ) -> tuple[TrackTags, str]:
+        """Metadaten zusammenstellen. Gibt Tags und einen Fehlergrund.
+
+        Der optionale Schritt des Ladens. Er kann in jeder Zeile
+        fehlschlagen, ohne dass der Aufrufer etwas anderes verliert als
+        einzelne Textfelder.
+        """
+        existing = known if known is not None else TrackTags()
+        if existing.is_complete:
+            # Aus rekordbox oder der Bibliothek ist alles bekannt. Die
+            # Datei dafuer noch einmal anzufassen waere reines Risiko.
+            return existing, ""
+
+        cached = self._tag_cache.get(digest)
+        if cached is not None:
+            return existing.filled_with(cached), ""
+
+        try:
+            result = self.tag_reader(source)
+        except Exception as error:  # pragma: no cover - Fehler im Leser
+            # Der Betriebsleser meldet Fehler als Text und wirft nicht.
+            # Wirft er doch, ist das ein Programmfehler - er darf aber
+            # nicht die fertige Analyse mitnehmen. Deshalb hier ebenfalls
+            # nur ein Metadatenfehler, mit vollem Stapel im Log.
+            log.exception("Tag-Leser von %s ist gescheitert", source.name)
+            self.metrics.note_metadata_failure()
+            return existing, f"{type(error).__name__}: {error}"
+
+        if not result.ok:
+            # Ausdruecklich **kein** Ladefehler. Die Analyse steht; hier
+            # fehlen nur Textfelder, und der Grund wird protokolliert.
+            log.warning(
+                "Metadaten von %s nicht gelesen: %s", source.name, result.error
+            )
+            self.metrics.note_metadata_failure()
+            return existing, result.error
+
+        self._tag_cache[digest] = result.tags
+        return existing.filled_with(result.tags), ""
 
     @property
     def analyzer_version(self) -> int:

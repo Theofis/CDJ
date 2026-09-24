@@ -27,6 +27,7 @@ from collections.abc import Callable
 
 from ..jog import STEPS_PER_REV
 from .commands import CommandType, DeckCommand
+from . import auto_cue
 from .loop import LoopEngine
 from .playback import NullPlaybackPort, PlaybackPort
 from .display_state import KEY_SHIFT_LIMIT
@@ -47,6 +48,7 @@ from .state import (
     LoopAdjust,
     LoopExitReason,
     LoopState,
+    MemoryCue,
     PadMode,
     PlayState,
     TEMPO_RANGES,
@@ -74,6 +76,11 @@ SEARCH_SPEED = 8.0
 #: ist die schnelle Suche des Geraets - eine Umdrehung deckt eine halbe
 #: Minute ab, damit ein langer Track in wenigen Drehungen durchlaufen ist.
 SEARCH_JOG_SECONDS_PER_REV = 30.0
+
+#: TRACK SEARCH gehalten und am Jogwheel gedreht: Umdrehungen je Track.
+#: Eine Viertelumdrehung ist ein Track - damit laesst sich eine Liste
+#: zuegig durchblaettern, ohne bei der kleinsten Bewegung zu springen.
+TRACK_SEARCH_JOG_REVOLUTIONS = 0.25
 
 #: Tempobereich fuer WIDE in Prozent.
 WIDE_RANGE_PERCENT = 100.0
@@ -117,7 +124,15 @@ class Deck:
         self.playback: PlaybackPort = NullPlaybackPort()
         #: Modifikatoren, die als gehaltene Taste wirken.
         self._delete_held = False
+        #: Ob der laufende CALL/DELETE-Druck schon etwas bewirkt hat. Nur
+        #: wenn nicht, schaltet das Loslassen den Hotcue-Aufrufmodus um.
+        self._delete_acted = False
         self._search_direction = 0
+        #: TRACK SEARCH gehalten: Richtung, sonst 0. Damit blaettert das
+        #: Jogwheel schnell durch die Liste (Abschnitt 7).
+        self._track_search_held = 0
+        #: Aufsummierte Jog-Umdrehungen waehrend der schnellen Tracksuche.
+        self._track_search_revolutions = 0.0
         self._cue_held = False
         #: Pad-Ereignisse, fuer die noch keine Logik festgelegt ist.
         self.deferred_pad_events: list[tuple[int, PadMode]] = []
@@ -249,9 +264,57 @@ class Deck:
             beat=0,
             beat_phase=0.0,
             audio_status=self._audio_status(),
+            memory_index=None,
+            hot_cue_call_mode=False,
         )
+        if self._state.auto_cue:
+            state = self._apply_auto_cue()
         self._sync_playback()
         return state
+
+    def _auto_cue_point(self) -> float:
+        """Wo AUTO CUE nach dem Laden stehen bleibt (Handbuch S. 44).
+
+        Gesucht wird der **erste Audioeinsatz**: die Stelle, an der das
+        Signal die eingestellte Schwelle erreicht. Dafuer werden die
+        Waveform-Daten der Trackanalyse gelesen - es wird nichts neu
+        analysiert (siehe ``auto_cue.detect_audio_start``).
+
+        Hot Cues zaehlen hier **nicht**. Ein Hotcue ist gesetzt worden, er
+        sagt nichts darueber, wo der Ton anfaengt.
+
+        Nur die Stufe ``AutoCueLevel.MEMORY`` benutzt gespeicherte Punkte,
+        und dort ausschliesslich die Memory Cues - so ist es am Geraet.
+
+        Laesst sich der Einsatz nicht feststellen (keine Waveform, oder der
+        Track bleibt durchgehend unter der Schwelle), bleibt es beim
+        Trackanfang. Das ist die ehrliche Antwort; geraten wird nichts.
+        """
+        track = self._state.track
+        if track is None:
+            return 0.0
+        level = self._state.auto_cue_level
+        threshold = level.threshold_db_below_peak
+        if threshold is None:
+            # Stufe MEMORY - die Werkseinstellung des Geraets.
+            point = auto_cue.first_memory_cue(
+                [cue.position_s for cue in track.memory_cues]
+            )
+        else:
+            point = auto_cue.detect_audio_start(
+                track.waveform, threshold_db_below_peak=threshold
+            )
+        return point if point is not None else 0.0
+
+    def _apply_auto_cue(self) -> DeckState:
+        """Nach dem Laden an den ersten Marker springen und dort warten."""
+        target = self._auto_cue_point()
+        self.playback.seek_seconds(target)
+        return self._update(
+            position_s=target,
+            cue_point_s=target,
+            play_state=PlayState.STOPPED,
+        )
 
     def _log_track_change_exit(self) -> None:
         """Loop-Ende durch Trackwechsel protokollieren.
@@ -838,6 +901,14 @@ class Deck:
         Ein bewusster Trackwechsel ist keine temporaere Slip-Aktion: die
         Hintergrund-Zeitachse wird verworfen, nicht angesprungen.
         """
+        # Gehalten werden heisst: das Jogwheel blaettert (Abschnitt 7).
+        # Deshalb interessiert auch das Loslassen.
+        self._track_search_held = (
+            int(cmd.get("direction", 0)) if cmd.pressed else 0
+        )
+        if not cmd.pressed:
+            return
+
         self._slip_reset()
         state = self._state
         if not state.has_track:
@@ -902,6 +973,13 @@ class Deck:
         if not 0 <= index < 8:
             return
 
+        if self._delete_held:
+            # CALL/DELETE gehalten und dabei ein Pad gedrueckt: die Taste
+            # hat als Modifikator gewirkt. Ihr Loslassen darf deshalb nicht
+            # zusaetzlich den Hotcue-Aufrufmodus umschalten - unabhaengig
+            # vom Pad-Modus und auch dann, wenn das Pad leer war.
+            self._delete_acted = True
+
         if state.pad_mode is PadMode.BEAT_LOOP:
             # Pads A-H = 1/4 bis 32 Beats. Gleiches Pad erneut verlaesst
             # den Loop, ein anderes aendert nur die Laenge.
@@ -929,6 +1007,16 @@ class Deck:
                     tuple(c for c in state.track.hot_cues if c.index != index)
                 )
             return
+
+        if state.hot_cue_call_mode:
+            # Im Aufrufmodus wird nur aufgerufen, nie gesetzt: ein leeres
+            # Pad bleibt leer, statt versehentlich einen Hotcue an der
+            # gerade laufenden Stelle anzulegen. Nach dem Aufruf - oder
+            # nach einem Griff ins Leere - endet der Modus.
+            self._update(hot_cue_call_mode=False)
+            if cue is None:
+                return
+            state = self._state
 
         if cue is None:
             loop = state.loop
@@ -986,32 +1074,216 @@ class Deck:
             self._update(pad_mode=mode)
 
     def _cmd_delete(self, cmd: DeckCommand) -> None:
-        self._delete_held = cmd.pressed
+        """CALL/DELETE als **Hotcue**-Taste.
+
+        Zwei Bedeutungen, unterschieden am Verlauf des Drucks:
+
+        1. **Gehalten und dabei ein Pad gedrueckt** loescht diesen Hotcue.
+           ``_cmd_pad`` liest dafuer ``_delete_held``.
+        2. **Kurzer Druck ohne Wirkung dazwischen** schaltet beim
+           Loslassen den Hotcue-Aufrufmodus um.
+
+        Dass Fall 2 erst beim **Loslassen** faellt, ist der Kern: vorher
+        ist nicht bekannt, ob noch ein Pad dazukommt. Zwei Bedeutungen
+        fuer dieselbe Flanke gibt es damit nie.
+
+        **Memory Cues und Memory Loops gehoeren nicht hierher.** Die
+        loescht ``_cmd_memory_delete`` ueber ``CommandType.MEMORY_DELETE``.
+        Am Geraet gibt es fuer beides nur diese eine Taste, deshalb leitet
+        der Druck bei angewaehltem Punkt dorthin weiter - das ist die
+        **einzige** Stelle, an der sich die beiden Funktionen beruehren,
+        und sie steht hier ausgeschrieben statt sich in einem Handler zu
+        verstecken. Ueber SHIFT + DELETE ist der Memory-Weg zusaetzlich
+        ohne diesen Umweg erreichbar.
+        """
+        if not cmd.pressed:
+            self._delete_held = False
+            if not self._delete_acted:
+                self._toggle_hot_cue_call_mode()
+            self._delete_acted = False
+            return
+
+        self._delete_held = True
+        self._delete_acted = False
+        if self._state.memory_index is not None:
+            # Eine Auswahl aus CUE/LOOP CALL liegt vor: dieselbe Taste
+            # bedeutet am Geraet dann das Loeschen dieses Punkts.
+            self._delete_held = False
+            self._delete_acted = True
+            self._delete_selected_memory_point()
+
+    def _cmd_memory_delete(self, cmd: DeckCommand) -> None:
+        """Den ueber CUE/LOOP CALL angewaehlten Punkt loeschen.
+
+        Eigenes Kommando und eigener Handler - unabhaengig vom
+        Hotcue-Loeschen. Ohne Auswahl passiert nichts; es wird nie
+        "irgendein" Punkt geloescht.
+
+        Geloescht wird nur im Speicher. Der Datentraeger bleibt unberuehrt:
+        weder ``export.pdb`` noch die ANLZ-Dateien werden angefasst.
+        """
+        if not cmd.pressed:
+            return
+        if self._state.memory_index is None:
+            self.unsupported.append("MEMORY_DELETE (kein Punkt angewaehlt)")
+            return
+        self._delete_selected_memory_point()
+
+    def _delete_selected_memory_point(self) -> None:
+        """Gemeinsame Wirkung beider Wege. Die einzige Loeschstelle."""
+        index = self._state.memory_index
+        if index is None:
+            return
+        points = self._memory_points()
+        if not 0 <= index < len(points):
+            # Die Auswahl zeigt ins Leere - abraeumen, nichts loeschen.
+            self._update(memory_index=None)
+            return
+        self._set_memory_points(points[:index] + points[index + 1:], index=None)
+
+    def _toggle_hot_cue_call_mode(self) -> None:
+        """Hotcue-Aufrufmodus umschalten - die einzige Stelle dafuer."""
+        self._update(hot_cue_call_mode=not self._state.hot_cue_call_mode)
+
+    # -- Memory Cues und Memory Loops --------------------------------------
+    #
+    # Gespeichert wird in ``track.memory_cues`` - derselben Liste, in der
+    # auch die aus rekordbox importierten Punkte stehen. Es entsteht keine
+    # zweite Struktur daneben.
+    #
+    # **Nur im Speicher.** Der Datentraeger wird nicht angefasst: weder
+    # ``export.pdb`` noch die ANLZ-Dateien. Die Punkte gelten fuer diese
+    # Sitzung; ein Schreib-Layer fuer den Stick existiert nicht (siehe
+    # docs/rekordbox-usb-import.md).
+
+    def _memory_points(self) -> tuple[MemoryCue, ...]:
+        """Gemerkte Punkte, nach Position sortiert."""
+        track = self._state.track
+        if track is None:
+            return ()
+        return tuple(sorted(track.memory_cues, key=lambda m: m.position_s))
+
+    def _set_memory_points(
+        self, points: tuple[MemoryCue, ...], *, index: int | None = None
+    ) -> None:
+        track = self._state.track
+        if track is None:
+            return
+        self._update(
+            track=dataclasses.replace(track, memory_cues=points),
+            memory_index=index,
+        )
 
     def _cmd_memory(self, cmd: DeckCommand) -> None:
-        # Braucht persistenten Cue-Speicher am Track - noch nicht vorhanden.
-        self.unsupported.append("MEMORY (kein Cue-Speicher)")
+        """MEMORY: Cue-Punkt oder laufenden Loop merken (Handbuch S. 62).
+
+        Laeuft ein Loop, wird er als **Memory Loop** gespeichert (Anfang und
+        Ende); sonst der aktuelle Cue-Punkt als **Memory Cue**. Ein Punkt,
+        der schon an derselben Stelle liegt, wird nicht doppelt abgelegt.
+        """
+        state = self._state
+        track = state.track
+        if track is None:
+            return
+
+        loop = state.loop
+        if loop.active and loop.is_set:
+            point = MemoryCue(
+                position_s=float(loop.in_s),      # type: ignore[arg-type]
+                kind=CueKind.LOOP,
+                loop_end_s=float(loop.out_s),     # type: ignore[arg-type]
+            )
+        elif state.cue_point_s is not None:
+            point = MemoryCue(
+                position_s=float(state.cue_point_s), kind=CueKind.CUE
+            )
+        else:
+            self.unsupported.append("MEMORY (kein Cue-Punkt)")
+            return
+
+        for existing in track.memory_cues:
+            if (
+                abs(existing.position_s - point.position_s) < 1e-6
+                and existing.kind is point.kind
+            ):
+                return                      # schon gemerkt
+        points = tuple(
+            sorted(
+                track.memory_cues + (point,), key=lambda m: m.position_s
+            )
+        )
+        self._set_memory_points(points, index=points.index(point))
+
+    def _cmd_hot_cue_call_mode(self, cmd: DeckCommand) -> None:
+        """Hotcue-Aufrufmodus direkt umschalten.
+
+        Am Geraet entsteht dieser Moduswechsel aus dem kurzen Druck auf
+        CALL/DELETE (siehe ``_cmd_delete``). Das Kommando bleibt zusaetzlich
+        bestehen, damit der Modus auch ohne Tastenverlauf gesetzt werden
+        kann - etwa aus einem Skript oder einem Test.
+        """
+        if not cmd.pressed:
+            return
+        self._toggle_hot_cue_call_mode()
+
+    def _cmd_auto_cue(self, cmd: DeckCommand) -> None:
+        """AUTO CUE ein/aus (langer Druck auf die Zeitmodus-Taste)."""
+        if not cmd.pressed:
+            return
+        self._update(auto_cue=not self._state.auto_cue)
 
     def _cmd_cue_loop_call(self, cmd: DeckCommand) -> None:
-        """CALL < und CALL >: Loop-Laenge.
+        """CUE/LOOP CALL < und > - gemerkte Punkte durchblaettern (S. 62).
 
-        Ohne laufenden Loop entsteht ein 4- bzw. 8-Beat-Loop, mit laufendem
-        Loop wird die Laenge halbiert bzw. verdoppelt. Am Pioneer-Geraet
-        blaettern diese Taster durch gespeicherte Cue- und Loop-Punkte; hier
-        sind sie bewusst die Loop-Groessentasten (kein Cue-Speicher).
+        Das ist die Bedeutung am Geraet: rueckwaerts bzw. vorwaerts zum
+        naechsten Memory Cue oder Memory Loop. Beruecksichtigt werden die
+        aus rekordbox importierten Punkte **und** die in dieser Sitzung mit
+        MEMORY angelegten - es ist dieselbe Liste.
+
+        Ist der Punkt ein Memory Loop, wird der Loop dabei aktiviert.
+
+        Diese Taster waren vorher mit Halbieren/Verdoppeln belegt, weil es
+        keinen Cue-Speicher gab. Das koennen jetzt die dafuer beschrifteten
+        Taster **4 BEAT LOOP / 1/2X** und **8 BEAT LOOP / 2X**.
         """
         state = self._state
         if not state.has_track:
             return
-        engine = self._loop
-        if not state.loop.active and not engine.has_grid:
-            self.unsupported.append("CUE_LOOP_CALL (kein Beatgrid)")
+        points = self._memory_points()
+        if not points:
+            self.unsupported.append("CUE_LOOP_CALL (keine gemerkten Punkte)")
             return
+
         forward = int(cmd.get("direction", -1)) > 0
-        press = (
-            engine.call_right_pressed if forward else engine.call_left_pressed
-        )
-        self._set_loop(press(state.loop, state.position_s))
+        position = state.position_s
+        # Von der **Wiedergabeposition** aus suchen, nicht vom zuletzt
+        # angewaehlten Punkt: sonst laeuft die Auswahl weg, sobald der Track
+        # ueber sie hinausgelaufen ist.
+        if forward:
+            candidates = [
+                (index, point) for index, point in enumerate(points)
+                if point.position_s > position + 1e-6
+            ]
+            target = candidates[0] if candidates else None
+        else:
+            candidates = [
+                (index, point) for index, point in enumerate(points)
+                if point.position_s < position - 1e-6
+            ]
+            target = candidates[-1] if candidates else None
+        if target is None:
+            return
+
+        index, point = target
+        self._update(memory_index=index)
+        self._leave_loop_if_outside(point.position_s)
+        self._seek(point.position_s)
+        if point.kind is CueKind.LOOP and point.loop_end_s is not None:
+            self._set_loop(
+                self._loop.activate(
+                    self._state.loop, point.position_s, point.loop_end_s
+                )
+            )
 
     # -- Loop -------------------------------------------------------------
 
@@ -1058,10 +1330,26 @@ class Deck:
             self._seek(jump_s)
 
     def _cmd_beat_loop(self, cmd: DeckCommand) -> None:
+        """Beatloop setzen - oder die Laenge skalieren.
+
+        Die beiden runden Taster tragen zwei Beschriftungen:
+        **4 BEAT LOOP / 1/2X** und **8 BEAT LOOP / 2X**. Ohne laufenden
+        Loop gilt die erste (4 bzw. 8 Beats), mit laufendem Loop die zweite
+        (halbieren bzw. verdoppeln). Dafuer gibt die Zuordnungsschicht
+        ``scale`` mit.
+
+        Ohne ``scale`` - Touch-Panel, Beatloop-Pads - wird immer gesetzt.
+        """
         state = self._state
         if state.track is None:
             return
         engine = self._loop
+
+        scale = cmd.get("scale")
+        if scale is not None and state.loop.active:
+            self._set_loop(engine.scaled(state.loop, float(scale)))
+            return
+
         if not engine.has_grid:
             self.unsupported.append("BEAT_LOOP (kein Beatgrid)")
             return
@@ -1095,6 +1383,9 @@ class Deck:
             return
         direction = int(cmd.get("direction", 1))
         if self._delete_held and cmd.get("beats") is None:
+            # Auch hier wirkt die Taste als Modifikator - ihr Loslassen ist
+            # dann kein kurzer Druck mehr (siehe ``_cmd_delete``).
+            self._delete_acted = True
             self._step_beat_jump_beats(direction)
             return
         grid = state.track.beat_grid
@@ -1322,6 +1613,25 @@ class Deck:
             return
         revolutions = delta / ticks_per_rev
 
+        if self._track_search_held:
+            # TRACK SEARCH gehalten und dabei am Jogwheel drehen: schnell
+            # durch die Liste blaettern (Abschnitt 7). Gezaehlt werden
+            # dieselben Umdrehungen wie sonst; je angefangener Bruchteil
+            # einer Umdrehung ein Track. Der Wechsel selbst geht ueber
+            # ``track_requests`` an die Anwendung - dieselbe Stelle wie beim
+            # einzelnen Tastendruck, keine zweite Bibliotheksanbindung.
+            self._track_search_revolutions += revolutions
+            steps = int(
+                self._track_search_revolutions / TRACK_SEARCH_JOG_REVOLUTIONS
+            )
+            if steps:
+                self._track_search_revolutions -= (
+                    steps * TRACK_SEARCH_JOG_REVOLUTIONS
+                )
+                direction = 1 if steps > 0 else -1
+                self.track_requests.extend([direction] * abs(steps))
+            return
+
         if self._search_direction:
             # SEARCH gehalten und dabei am Jogwheel drehen: schnelle Suche
             # durch den Track, in der Richtung der **Drehung**. Es entsteht
@@ -1451,6 +1761,9 @@ _HANDLERS: dict[CommandType, Callable[[Deck, DeckCommand], None]] = {
     CommandType.PAD_MODE: Deck._cmd_pad_mode,
     CommandType.DELETE: Deck._cmd_delete,
     CommandType.MEMORY: Deck._cmd_memory,
+    CommandType.MEMORY_DELETE: Deck._cmd_memory_delete,
+    CommandType.HOT_CUE_CALL_MODE: Deck._cmd_hot_cue_call_mode,
+    CommandType.AUTO_CUE: Deck._cmd_auto_cue,
     CommandType.CUE_LOOP_CALL: Deck._cmd_cue_loop_call,
     CommandType.LOOP_IN: Deck._cmd_loop_in,
     CommandType.LOOP_OUT: Deck._cmd_loop_out,

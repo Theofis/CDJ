@@ -34,6 +34,7 @@ from virtual_cdj.deck.library import (
     TrackListLibrary,
 )
 from virtual_cdj.deck.mapping import InputMapper
+from virtual_cdj.deck.mode_manager import OperatingMode
 from virtual_cdj.deck.provider import LocalDeckStateProvider
 from virtual_cdj.deck.state import BeatGrid, TrackInfo, empty_state
 
@@ -612,7 +613,9 @@ class PanelChainTests(unittest.TestCase):
         from virtual_cdj.app import CdjApplication
         from virtual_cdj.cdj_ui.screen import CdjScreen
 
-        self.app = CdjApplication([1], start_audio=False)
+        self.app = CdjApplication(
+            [1], start_audio=False, operating_mode=OperatingMode.CDJ
+        )
         self.app.library.add(
             TrackListLibrary(
                 SourceInfo(
@@ -756,7 +759,9 @@ class ApplicationSourceTests(unittest.TestCase):
         """S. 42: Tracks nach etwa einer Minute Wiedergabe im Verlauf."""
         from virtual_cdj.app import CdjApplication
 
-        app = CdjApplication([1], start_audio=False)
+        app = CdjApplication(
+            [1], start_audio=False, operating_mode=OperatingMode.CDJ
+        )
         try:
             app.decks[1].load_track(
                 TrackInfo(
@@ -778,7 +783,9 @@ class ApplicationSourceTests(unittest.TestCase):
     def test_paused_playback_does_not_fill_the_history(self) -> None:
         from virtual_cdj.app import CdjApplication
 
-        app = CdjApplication([1], start_audio=False)
+        app = CdjApplication(
+            [1], start_audio=False, operating_mode=OperatingMode.CDJ
+        )
         try:
             app.decks[1].load_track(
                 TrackInfo(track_id="a", title="A", duration_s=300.0)
@@ -792,7 +799,9 @@ class ApplicationSourceTests(unittest.TestCase):
         """Es werden keine Geraete erfunden."""
         from virtual_cdj.app import CdjApplication
 
-        app = CdjApplication([1], start_audio=False)
+        app = CdjApplication(
+            [1], start_audio=False, operating_mode=OperatingMode.CDJ
+        )
         try:
             self.assertEqual(app.library.sources(), ())
         finally:

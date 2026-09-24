@@ -12,6 +12,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 try:
     import tkinter as tk
@@ -238,6 +239,13 @@ class MenuPageTests(unittest.TestCase):
         self.assertIs(self.rig.modes.mode, mode)
 
     def test_operating_mode_view_has_a_button_back_to_the_menu(self) -> None:
+        from virtual_cdj.deck.mode_manager import OperatingMode
+
+        self.page.operating_modes = SimpleNamespace(
+            current_mode=OperatingMode.CDJ,
+            last_error="",
+            set_mode=lambda _mode: True,
+        )
         self.page.activate(1)
         self.assertTrue(self.page.operating_view)
         self.page.refresh()

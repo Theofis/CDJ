@@ -51,7 +51,7 @@ class CdjMasterWaveform(Region):
             return ("leer",)
         seconds_per_pixel = display.window_s / max(1, self.w)
         return (
-            master.player_id, master.track_id,
+            master.source_type, master.player_id, master.track_id,
             int(master.position_s / max(1e-6, seconds_per_pixel)),
             round(display.window_s, 4),
             display.waveform_mode,

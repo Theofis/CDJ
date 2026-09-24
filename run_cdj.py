@@ -14,11 +14,13 @@ Verdrahtung siehe ``virtual_cdj/app.py``.
 from __future__ import annotations
 
 import argparse
+import logging
 import tkinter as tk
 
 from virtual_cdj.app import CdjApplication
 from virtual_cdj.core.button_customization import ButtonCustomizationStore
 from virtual_cdj.core.model import Control
+from virtual_cdj.prolink import RealProLinkProvider, SimulatorProLinkProvider
 from virtual_cdj.deck.commands import CommandType, command
 from virtual_cdj.cdj_ui import theme
 from virtual_cdj.cdj_ui.window import CdjDisplayApp
@@ -154,9 +156,25 @@ def wire_display(
 
 
 def build(args: argparse.Namespace) -> CdjDisplayApp:
+    if args.prolink_raw_dump:
+        logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
     deck_ids = [int(part) for part in args.decks.split(",") if part.strip()]
     if not deck_ids:
         deck_ids = [1]
+
+    prolink_provider = None
+    if args.prolink_source == "simulator":
+        prolink_provider = SimulatorProLinkProvider(
+            args.prolink_host, args.prolink_port
+        )
+    elif args.prolink_source == "real":
+        prolink_provider = RealProLinkProvider(
+            args.prolink_interface,
+            presence=args.prolink_presence,
+            presence_mac=args.prolink_mac,
+            capture_path=args.prolink_capture,
+            raw_dump=args.prolink_raw_dump,
+        )
 
     application = CdjApplication(
         deck_ids,
@@ -164,14 +182,15 @@ def build(args: argparse.Namespace) -> CdjDisplayApp:
         start_audio=args.audio,
         demo=args.demo,
         usb=args.usb,
+        prolink_provider=prolink_provider,
     )
 
     app = CdjDisplayApp()
     app.application = application  # type: ignore[attr-defined]
 
     for index, deck_id in enumerate(deck_ids):
-        # Die Master-Sicht kommt aus der Anwendung. Genau hier koennte
-        # spaeter eine Netzwerkquelle stehen.
+        # Die Master-Sicht kommt aus der Anwendung; Simulator und echte
+        # Netzwerkquelle enden oberhalb des Providers im selben Modell.
         window = app.add_display(
             application.providers[deck_id],
             master_view=(
@@ -287,6 +306,51 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--no-usb", dest="usb", action="store_false",
         help="angeschlossene Datentraeger nicht einlesen",
+    )
+    parser.add_argument(
+        "--prolink-source", choices=("none", "simulator", "real"), default="none",
+        help="Quelle externer Playerdaten (Standard: none)",
+    )
+    parser.add_argument(
+        "--prolink-host", default="127.0.0.1",
+        help="Host des internen ProLink-Simulators",
+    )
+    parser.add_argument(
+        "--prolink-port", type=int, default=17600,
+        help="TCP-Port des internen ProLink-Simulators",
+    )
+    parser.add_argument(
+        "--prolink-interface", default="auto", metavar="IP",
+        help=(
+            "lokale IPv4-Adresse fuer echtes PRO DJ LINK; auto bevorzugt "
+            "eine eindeutige 169.254-Adresse, sonst alle Interfaces"
+        ),
+    )
+    parser.add_argument(
+        "--prolink-presence",
+        choices=("passive", "peer"),
+        default="passive",
+        help=(
+            "passive sendet nichts; peer sendet nur den belegten "
+            "Observer-7-Keepalive fuer Status-Unicasts"
+        ),
+    )
+    parser.add_argument(
+        "--prolink-mac",
+        default=None,
+        metavar="MAC",
+        help="MAC des mit --prolink-interface gewaehlten NIC (nur peer-Fallback)",
+    )
+    parser.add_argument(
+        "--prolink-capture",
+        default=None,
+        metavar="JSONL",
+        help="empfangene Rohpakete im replay-faehigen JSONL-Journal speichern",
+    )
+    parser.add_argument(
+        "--prolink-raw-dump",
+        action="store_true",
+        help="vollstaendigen Paket-Hexdump im Debug-Log ausgeben",
     )
     parser.set_defaults(panel=True, audio=True, usb=True)
     return parser.parse_args(argv)

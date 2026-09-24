@@ -240,6 +240,10 @@ class UsbDeviceService:
         #: Pfad -> Kennung, damit ein entferntes Laufwerk seinem Geraet
         #: zugeordnet werden kann (der Pfad ist das, was verschwindet).
         self._by_path: dict[str, str] = {}
+        #: Pfade, die ueber USB STOP freigegeben wurden. Sie bleiben aus der
+        #: Geraeteliste draussen, solange das Laufwerk physisch da ist -
+        #: sonst waere USB STOP nach dem naechsten ``poll()`` wirkungslos.
+        self._released: set[str] = set()
 
         self._jobs: queue.Queue[_ReadJob | None] = queue.Queue()
         self._results: queue.Queue[_ReadResult] = queue.Queue()
@@ -302,6 +306,10 @@ class UsbDeviceService:
 
         detached: list[MediaDevice] = []
         for volume in change.removed:
+            # Ein physisch abgezogenes Laufwerk hebt eine vorherige
+            # Freigabe auf: beim naechsten Einstecken ist es wieder eine
+            # ganz normale neue Quelle.
+            self._released.discard(volume.root_path)
             device_id = self._by_path.pop(volume.root_path, "")
             device = self._devices.pop(device_id, None)
             if device is not None:
@@ -310,6 +318,8 @@ class UsbDeviceService:
 
         attached: list[MediaDevice] = []
         for volume in change.added:
+            if volume.root_path in self._released:
+                continue
             device = self._attach(volume)
             attached.append(device)
 
@@ -342,6 +352,35 @@ class UsbDeviceService:
                 continue
             self._rescan(device.volume)
         return change
+
+    def disconnect(self, device_id: str) -> MediaDevice | None:
+        """USB STOP: einen Datentraeger freigeben (Handbuch S. 18).
+
+        Das ist die **Quellen**-Trennung, nicht das Auswerfen des Laufwerks
+        durch das Betriebssystem. Der Dienst vergisst das Geraet, meldet es
+        ueber ``on_detached`` ab, und die Quelle verschwindet aus SOURCE.
+        Ein noch laufender Lesevorgang laeuft ins Leere: sein Ergebnis wird
+        in ``_drain_results`` verworfen, weil das Geraet nicht mehr in der
+        Liste steht.
+
+        Bewusst **kein** OS-Eject: ein erzwungenes Aushaengen waehrend noch
+        Puffer offen sind, ist genau der Weg, auf dem rekordbox-Sticks
+        kaputtgehen. Das physische Abziehen bleibt Sache der Person davor -
+        nach dieser Freigabe greift das Programm nicht mehr auf den Stick
+        zu, und genau das ist die Aussage von USB STOP.
+
+        Rueckgabe: das freigegebene Geraet, oder ``None`` bei unbekannter
+        Kennung (kein Fehler - zweimal STOP ist zweimal dasselbe Ziel).
+        """
+        device = self._devices.pop(device_id, None)
+        if device is None:
+            return None
+        root_path = device.volume.root_path
+        self._by_path.pop(root_path, None)
+        self._released.add(root_path)
+        log.info("Datentraeger freigegeben (USB STOP): %s", device.name)
+        self._notify(self.on_detached, device)
+        return device
 
     # ------------------------------------------------------------------
 

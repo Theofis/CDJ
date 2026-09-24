@@ -24,6 +24,7 @@ from virtual_cdj.deck.commands import CommandType, command
 from virtual_cdj.deck.display_state import WaveformMode
 from virtual_cdj.deck.engine import SEARCH_JOG_SECONDS_PER_REV, SEARCH_SPEED, Deck
 from virtual_cdj.deck.mapping import InputMapper
+from virtual_cdj.deck.mode_manager import OperatingMode
 from virtual_cdj.deck.state import (
     BEAT_LOOP_LENGTHS,
     BeatGrid,
@@ -568,7 +569,9 @@ class PadModeLedTests(unittest.TestCase):
     def setUp(self) -> None:
         from virtual_cdj.app import CdjApplication
 
-        self.app = CdjApplication([1], start_audio=False)
+        self.app = CdjApplication(
+            [1], start_audio=False, operating_mode=OperatingMode.CDJ
+        )
         self.deck = self.app.decks[1]
         self.deck.load_track(make_track())
 

@@ -146,6 +146,16 @@ def now_ms() -> float:
     return time.time() * 1000.0
 
 
+#: Ab dieser Haltedauer gilt ein Tastendruck als "gedrueckt gehalten"
+#: (Handbuch S. 22, 25, 38, 44).
+#:
+#: Der Wert steht hier und nicht bei einem der Verbraucher, weil ihn
+#: mittlerweile zwei Stellen brauchen: der Bildschirm fuer BACK und den
+#: Drehregler, die Zuordnungsschicht fuer TIME MODE / AUTO CUE. Zwei
+#: Konstanten haetten irgendwann zwei verschiedene Werte.
+LONG_PRESS_S = 0.5
+
+
 @dataclass(frozen=True)
 class InputEvent:
     """Ein normiertes Eingabeereignis.

@@ -289,6 +289,10 @@ class MasterDeckView:
     spaeter aus dem Netzwerk befuellt werden kann.
     """
 
+    #: ``local`` oder die normalisierte externe Quelle (z. B. ``prolink``).
+    #: Die Herkunft ist Teil der Identität: ein externer Player 1 ist nicht
+    #: dasselbe Objekt wie ein lokales Deck 1.
+    source_type: str = "local"
     player_id: int = 0
     track_id: str = ""
     title: str = ""
@@ -326,6 +330,7 @@ class MasterDeckView:
         """
         track = state.track
         return cls(
+            source_type="local",
             player_id=state.deck_id,
             track_id=track.track_id if track else "",
             title=track.display_title if track else "",
@@ -463,7 +468,10 @@ class CdjDisplayState:
         master = self.master
         if master is None or not master.is_master:
             return False
-        return master.player_id != self.deck.deck_id
+        return (
+            master.source_type != "local"
+            or master.player_id != self.deck.deck_id
+        )
 
     # ------------------------------------------------------------------
     # Abgeleitete Anzeigewerte

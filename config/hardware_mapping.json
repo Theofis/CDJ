@@ -54,6 +54,10 @@
       "input_type": "digital",
       "hardware": null
     },
+    "TIME_MODE": {
+      "input_type": "digital",
+      "hardware": null
+    },
     "SLIP": {
       "input_type": "digital",
       "hardware": null

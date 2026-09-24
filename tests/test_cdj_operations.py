@@ -29,6 +29,7 @@ from virtual_cdj.deck.engine import (
 )
 from virtual_cdj.deck.loop import LoopEngine
 from virtual_cdj.deck.mapping import InputMapper
+from virtual_cdj.deck.mode_manager import OperatingMode
 from virtual_cdj.deck.state import (
     BEAT_JUMP_BEAT_VALUES,
     BeatGrid,
@@ -703,6 +704,7 @@ class TrackSearchApplicationTests(unittest.TestCase):
             start_audio=False,
             demo=True,
             cache_directory=self._cache.name,
+            operating_mode=OperatingMode.CDJ,
         )
         self.ids = self.app.demo_track_ids()
         self.assertGreaterEqual(len(self.ids), 2, "Demo-Quelle zu klein")

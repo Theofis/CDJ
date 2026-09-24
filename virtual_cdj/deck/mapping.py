@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from ..core import ids
-from ..core.model import EventType, InputEvent
+from ..core.model import LONG_PRESS_S, EventType, InputEvent
 from ..jog import STEPS_PER_REV
 from .commands import CommandType, DeckCommand, Views, command
 from .library import PLAYLIST_CATEGORY, TAG_LIST_CATEGORY
@@ -32,8 +32,10 @@ _ON_PRESS: dict[str, tuple[CommandType, dict[str, object]]] = {
     ids.LOOP_IN: (CommandType.LOOP_IN, {}),
     ids.LOOP_OUT: (CommandType.LOOP_OUT, {}),
     ids.RELOOP_EXIT: (CommandType.RELOOP_EXIT, {}),
-    ids.BEAT_LOOP_4: (CommandType.BEAT_LOOP, {"beats": 4.0}),
-    ids.BEAT_LOOP_8: (CommandType.BEAT_LOOP, {"beats": 8.0}),
+    # Doppelbeschriftung am Geraet: ohne laufenden Loop 4 bzw. 8 Beats,
+    # mit laufendem Loop 1/2X bzw. 2X.
+    ids.BEAT_LOOP_4: (CommandType.BEAT_LOOP, {"beats": 4.0, "scale": 0.5}),
+    ids.BEAT_LOOP_8: (CommandType.BEAT_LOOP, {"beats": 8.0, "scale": 2.0}),
     ids.MEMORY: (CommandType.MEMORY, {}),
     ids.BEAT_SYNC: (CommandType.SYNC_TOGGLE, {}),
     ids.MASTER: (CommandType.MASTER_SET, {}),
@@ -45,8 +47,6 @@ _ON_PRESS: dict[str, tuple[CommandType, dict[str, object]]] = {
     ids.TEMPO_RESET: (CommandType.TEMPO_RESET_TOGGLE, {}),
     ids.JOG_MODE: (CommandType.JOG_MODE_TOGGLE, {}),
     ids.USB_STOP: (CommandType.USB_STOP, {}),
-    ids.TRACK_SEARCH_PREV: (CommandType.TRACK_SEARCH, {"direction": -1}),
-    ids.TRACK_SEARCH_NEXT: (CommandType.TRACK_SEARCH, {"direction": +1}),
     ids.BEAT_JUMP_PREV: (CommandType.BEAT_JUMP, {"direction": -1}),
     ids.BEAT_JUMP_NEXT: (CommandType.BEAT_JUMP, {"direction": +1}),
     ids.CUE_LOOP_CALL_PREV: (CommandType.CUE_LOOP_CALL, {"direction": -1}),
@@ -91,6 +91,11 @@ _MOMENTARY: dict[str, tuple[CommandType, dict[str, object]]] = {
     ids.SEARCH_BACK: (CommandType.SEARCH, {"direction": -1}),
     ids.SEARCH_FWD: (CommandType.SEARCH, {"direction": +1}),
     ids.JOG_TOUCH: (CommandType.JOG_TOUCH, {}),
+    # TRACK SEARCH meldet auch das Loslassen: gehalten blaettert das
+    # Jogwheel schnell durch die Liste (Abschnitt 7). Der eigentliche
+    # Sprung passiert weiterhin beim Druecken.
+    ids.TRACK_SEARCH_PREV: (CommandType.TRACK_SEARCH, {"direction": -1}),
+    ids.TRACK_SEARCH_NEXT: (CommandType.TRACK_SEARCH, {"direction": +1}),
     # Drehgeber und BACK melden Druecken **und** Loslassen: nur so kann der
     # Bildschirm kurzes von langem Druecken unterscheiden (S. 22, 25, 38).
     ids.BROWSE_PRESS: (CommandType.BROWSE_PRESS, {}),
@@ -119,6 +124,9 @@ class InputMapper:
         self.deck_id = deck_id
         self.sink = sink
         self.shift = False
+        #: Zeitstempel des laufenden TIME-MODE-Drucks in Millisekunden.
+        #: ``None`` heisst: die Taste ist nicht gedrueckt.
+        self._time_mode_pressed_ms: float | None = None
         #: IDs, fuer die kein Mapping existiert - fuer die Diagnose.
         self.unhandled: set[str] = set()
 
@@ -131,6 +139,14 @@ class InputMapper:
         if control_id == ids.SHIFT:
             self.shift = event.event is EventType.PRESS
             return None
+
+        if control_id == ids.TIME_MODE:
+            # Eigener Weg, weil das Druecken hier absichtlich noch kein
+            # Kommando ergibt - sonst landete die Taste in ``unhandled``.
+            cmd = self._time_mode(event)
+            if cmd is not None:
+                self.sink(cmd)
+            return cmd
 
         if control_id in UNMAPPED:
             return None
@@ -149,6 +165,50 @@ class InputMapper:
     def reset_modifiers(self) -> None:
         """Gehaltene Mapping-Modifikatoren nach einem Seitenwechsel loesen."""
         self.shift = False
+        # Wird die Release-Flanke durch den Seitenwechsel verschluckt, darf
+        # kein halber Druck stehen bleiben, der beim naechsten Loslassen
+        # als sehr langes Halten gilt.
+        self._time_mode_pressed_ms = None
+
+    def _time_mode(self, event: InputEvent) -> DeckCommand | None:
+        """TIME MODE / AUTO CUE - eine Taste, zwei Haltedauern.
+
+        kurz gedrueckt -> ``TIME_MODE``  (Zeitanzeige, Bildschirmbefehl)
+        lang gedrueckt -> ``AUTO_CUE``   (Deckzustand)
+
+        Entschieden wird beim **Loslassen**, aus der Differenz der
+        Ereigniszeitstempel. Daraus folgt zweierlei, und beides ist so
+        gewollt:
+
+        * Es entsteht genau **ein** Kommando je Druck. Ein langer Druck
+          kann deshalb nicht zusaetzlich die Zeitanzeige umschalten.
+        * Es laeuft kein Timer und kein Nebenlaeufer. Die Zeitstempel sind
+          ohnehin an jedem Ereignis dran (``InputEvent.timestamp``, in
+          Millisekunden); mehr braucht es nicht, und ein Test kann sie
+          einsetzen, statt zu warten.
+        """
+        if event.event is EventType.PRESS:
+            self._time_mode_pressed_ms = event.timestamp
+            return None
+        if event.event is not EventType.RELEASE:
+            return None
+        started = self._time_mode_pressed_ms
+        self._time_mode_pressed_ms = None
+        if started is None:
+            # Loslassen ohne Druecken - z. B. nach einem Seitenwechsel.
+            return None
+        held_s = max(0.0, (event.timestamp - started) / 1000.0)
+        command_type = (
+            CommandType.AUTO_CUE if held_s >= LONG_PRESS_S
+            else CommandType.TIME_MODE
+        )
+        return command(
+            command_type,
+            self.deck_id,
+            event.source.value,
+            control_id=event.control_id,
+            held=held_s >= LONG_PRESS_S,
+        )
 
     # ------------------------------------------------------------------
 
@@ -173,6 +233,24 @@ class InputMapper:
             and self.shift
         ):
             return mapped(CommandType.OPEN_SETTINGS, shift=True)
+
+        # SHIFT + CALL/DELETE loescht den ueber CUE/LOOP CALL angewaehlten
+        # Memory Cue bzw. Memory Loop - unabhaengig davon, wie die Taste
+        # sonst gehalten oder kurz gedrueckt wird.
+        #
+        # Warum es diesen zweiten Weg gibt: am Geraet tragen Hotcue-Loeschen
+        # und Memory-Loeschen dieselbe Taste, unterschieden nur durch den
+        # Zusammenhang. Hier sind es zwei Kommandos, und dieses hier ist der
+        # eindeutige Weg zum Memory-Loeschen - ohne Abhaengigkeit davon, was
+        # vorher passiert ist. Derselbe Gedanke wie bei SHIFT + QUANTIZE
+        # unten: ein zentral gefuehrter Vorgang braucht eine Tuer, die nicht
+        # vom Zufall abhaengt.
+        if (
+            control_id == ids.DELETE
+            and event.event is EventType.PRESS
+            and self.shift
+        ):
+            return mapped(CommandType.MEMORY_DELETE, shift=True)
 
         # SHIFT + QUANTIZE schaltet die Rasterweite weiter (1/8, 1/4, 1/2,
         # 1 Beat). Am CDJ-3000 sitzt dieser Wert in UTILITY/SHORTCUT; die

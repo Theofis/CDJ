@@ -36,6 +36,12 @@ class ModeManager:
         *,
         settings_path: str | Path | None = None,
         default: OperatingMode = OperatingMode.CDJ,
+        #: Erzwungener Startmodus. Ist er gesetzt, wird die gespeicherte
+        #: Einstellung beim Start **nicht** gelesen. Gedacht fuer Tests und
+        #: fuer Kommandozeilenaufrufe: ein Test soll nicht davon abhaengen,
+        #: welchen Modus die Person beim letzten Programmlauf gewaehlt hat.
+        #: Ein spaeteres ``set_mode()`` speichert weiterhin normal.
+        mode: OperatingMode | None = None,
     ) -> None:
         self._backends = {
             OperatingMode.MIDI: midi_backend,
@@ -48,7 +54,9 @@ class ModeManager:
         )
         self._listeners: list[ModeListener] = []
         self.last_error = ""
-        self._current_mode = self._load_mode(default)
+        self._current_mode = (
+            mode if mode is not None else self._load_mode(default)
+        )
         self._active_backend = self._backends[self._current_mode]
         self._active_backend.start()
 

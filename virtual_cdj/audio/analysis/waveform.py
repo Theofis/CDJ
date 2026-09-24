@@ -172,6 +172,15 @@ def compute_levels(
     )
     # Dynamik wird am unveraenderten Signal gemessen und getrennt normiert:
     # sie beschreibt die Lautstaerke, nicht die Klangfarbe.
+    #
+    # TODO (AUTO CUE LEVEL): ``full_scale`` wird hier berechnet und danach
+    # weggeworfen. Damit sind ``peak``/``rms`` **trackrelativ** - eine
+    # AUTO-CUE-Schwelle von "-60 dB" bedeutet deshalb "60 dB unter dem
+    # lautesten Punkt dieses Tracks", nicht -60 dBFS wie am Geraet. Fuer
+    # absolute Schwellen muesste dieser Wert in ``BandPeaks`` mitgefuehrt,
+    # im Analyse-Cache mitgespeichert (Formatversion!) und bis
+    # ``deck/state.WaveformData`` durchgereicht werden. Die vollstaendige
+    # Schrittfolge steht in ``deck/auto_cue.py``.
     full_scale = float(max(np.max(np.abs(mono)), 1e-9))
 
     result: dict[str, BandPeaks] = {}

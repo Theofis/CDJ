@@ -501,6 +501,39 @@ rekordbox-Struktur darauf liegt - sonst waere die Systemplatte eine Quelle.
 * SEARCH, TRACK FILTER, TAG LIST: es gibt dafuer **keine Oberflaeche** -
   nur die Taster. Sie muessen gebaut werden, nicht angebunden.
 
+## USB STOP: Quelle trennen, Laufwerk nicht auswerfen
+
+Am CDJ heisst der Taster USB STOP, und er macht genau eine Sache: der
+Player gibt den Datentraeger frei. Danach darf man ihn abziehen.
+
+Hier ist das `UsbDeviceService.disconnect(device_id)`, ausgeloest ueber
+`CdjApplication.stop_media()`:
+
+* Das Geraet verschwindet aus `UsbDeviceService.devices` und - ueber den
+  ohnehin vorhandenen `on_detached`-Rueckruf - aus `MediaLibrary`. Es ist
+  derselbe Weg wie beim physischen Abziehen, keine zweite Abbaulogik.
+* Von dieser Quelle laesst sich nichts mehr laden: `load_by_track_id`
+  findet die Track-ID nicht mehr.
+* Ein **bereits geladener** Track spielt weiter. Seine Samples liegen im
+  Speicher, nicht auf dem Stick. Ein Deck mitten im Set stummzuschalten
+  waere das Gegenteil eines sicheren Zustands.
+* Solange das Laufwerk physisch steckt, kommt es nicht von selbst zurueck
+  (`_released`). Erst Abziehen und neu Einstecken macht daraus wieder eine
+  Quelle.
+
+**Kein Betriebssystem-Auswurf.** Es gibt bewusst keinen erzwungenen
+Auswurf, kein `subprocess`, kein `DeviceIoControl`. Ein erzwungenes
+Aushaengen mit noch offenen Schreibpuffern ist der uebliche Weg, auf dem
+rekordbox-Sticks kaputtgehen - und dieses Programm schreibt ohnehin nicht
+auf den Stick, hat also auch nichts zu leeren. Das physische Abziehen
+bleibt Sache der Person davor. Ein Test haelt das fest
+(`tests/test_hardware_controls.py::UsbStopServiceTests`).
+
+Welcher Stick gemeint ist, entscheidet `stop_media()` in dieser
+Reihenfolge: der, von dem der Track dieses Decks stammt; sonst der
+einzige angeschlossene; sonst keiner. Lieber nichts trennen als den
+falschen Stick.
+
 ## Offene Punkte
 
 * **Playlist-Ordner-Tiefe:** `RekordboxLibraryReader` liefert den Baum in

@@ -284,7 +284,7 @@ gekennzeichnet.
 
 | Abweichung | Begruendung |
 | ---------- | ----------- |
-| **Kein AUTO CUE** | Das Eigenbau-Bedienfeld hat keinen AUTO-CUE-Taster (frueher ausdruecklich festgelegt). Die Anzeige entfaellt konsequent mit. |
+| **AUTO CUE ohne eigene Taste** | Das Bedienfeld hat den doppelt beschrifteten Taster `TIME MODE / AUTO CUE`: kurz gedrueckt schaltet er die Zeitanzeige, lang gedrueckt AUTO CUE. Der Zustand steht in `DeckState.auto_cue`; die Anzeige dafuer fehlt noch. |
 | **Master-Wellenform nur bei fremdem Master** | Ist dieses Deck selbst Master, waere die zweite Wellenform identisch. Statt Dopplung wird die Zeile ausgeblendet und die eigene Wellenform bekommt die Master-Kennzeichnung. Entspricht dem Wunsch "lokal gegen Master" statt vier Wellenformen. |
 | **Zoom auch per Touch** | Am Geraet nur ueber den Drehregler. Auf einem 7"-Touchscreen ohne Drehregler-Hardware sind zwei Touch-Ziele fuer Zoom die bessere Bedienbarkeit. Der Drehregler bleibt gleichwertig. |
 | **Beat Countdown auch zu Hot Cues** | Das Handbuch nennt nur gespeicherte Cues. Hot Cues sind auf diesem Geraet die praktisch genutzten Marker, deshalb werden beide beruecksichtigt. |

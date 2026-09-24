@@ -2,7 +2,7 @@
 
 Automatisch erzeugt aus `virtual_cdj/core/controls.py` (`python tools/gen_controls_doc.py`). Nicht von Hand aendern - Aenderungen gehoeren in `controls.py`.
 
-Eingaenge: **55**, reine Anzeigen: **0**, ungeklaert: **1**
+Eingaenge: **56**, reine Anzeigen: **0**, ungeklaert: **1**
 
 ## SCREEN
 
@@ -31,6 +31,12 @@ Eingaenge: **55**, reine Anzeigen: **0**, ungeklaert: **1**
 | ID | Beschriftung | Typ | LED | Hardware | Funktion | Status |
 | -- | ------------ | --- | --- | -------- | -------- | ------ |
 | `USB_STOP` | USB Stop | Button | - | nicht zugeordnet | nicht zugeordnet | ungeklaert |
+
+## TIME
+
+| ID | Beschriftung | Typ | LED | Hardware | Funktion | Status |
+| -- | ------------ | --- | --- | -------- | -------- | ------ |
+| `TIME_MODE` | Time Mode / Auto Cue | Button | - | nicht zugeordnet | nicht zugeordnet | virtuell |
 
 ## MODIFIER
 

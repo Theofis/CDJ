@@ -30,6 +30,10 @@ from .model import Control, ControlType, Shape, Status
 G_SCREEN = "SCREEN"
 G_BROWSE = "BROWSE"
 G_MEDIA = "MEDIA"
+#: Zeitanzeige und AUTO CUE. Eigene Gruppe, weil der Taster weder zum
+#: Bildschirmmenue noch zum Transport gehoert - er stellt eine Anzeige und
+#: eine Ladeeinstellung um.
+G_TIME = "TIME"
 G_MODIFIER = "MODIFIER"
 G_PLAY_MODE = "PLAY_MODE"
 G_PADS = "PERFORMANCE_PADS"
@@ -55,6 +59,7 @@ GROUP_ORDER = (
     G_SCREEN,
     G_BROWSE,
     G_MEDIA,
+    G_TIME,
     G_MODIFIER,
     G_PLAY_MODE,
     G_PADS,
@@ -174,6 +179,21 @@ CONTROL_LIST: tuple[Control, ...] = (
     _btn(ids.USB_STOP, "USB Stop", G_MEDIA, 140, 181, short="USB STOP",
          w=15, h=15, status=Status.UNRESOLVED,
          note="Runder Taster unter dem Kartenschacht/Port oben links."),
+
+    # ---------------- Zeitanzeige / Auto Cue ------------------------------
+    #
+    # Ein Taster mit zwei Bedeutungen, wie am CDJ-3000:
+    #
+    #   kurz gedrueckt  -> Zeitanzeige ELAPSED <-> REMAIN
+    #   lang gedrueckt  -> AUTO CUE ein/aus
+    #
+    # Welche der beiden gilt, entscheidet allein die Haltedauer in
+    # ``deck/mapping.py``. Es gibt dafuer keine zweite Taste und keinen
+    # Modifikator.
+    _btn(ids.TIME_MODE, "Time Mode / Auto Cue", G_TIME, 140, 209,
+         short="TIME MODE\n/ AUTO CUE", w=34, h=12, shape=Shape.RECT,
+         note="Kurz druecken schaltet die Zeitanzeige um, langes Druecken "
+              "AUTO CUE ein und aus."),
 
     # ---------------- Slip / Quantize -------------------------------------
     _btn(ids.SLIP, "Slip", G_PLAY_MODE, 128, 238, short="SLIP",

@@ -117,6 +117,15 @@ Chroma-Profil gegen die Krumhansl-Schmuckler-Profile in allen zwoelf
 Transpositionen, Ausgabe als Camelot (`8A`). Unterhalb einer Konfidenz von
 1.08 wird keine Tonart behauptet.
 
+## Metadaten sind ein eigener Schritt
+
+Titel, Interpret, Genre und Label gehoeren **nicht** in den Analysepfad.
+Sie werden erst nach der Analyse geholt, in einem eigenen kurzlebigen
+Prozess, und ihr Ausfall kostet nur diese Felder - Waveform, Beatgrid und
+BPM stehen dann trotzdem. Grund war ein harter Prozessabsturz beim Lesen
+ueber `mutagen`. Fehlerbild, Messwerte, rekordbox-Vorrang und das
+verbleibende Risiko: [METADATA.md](METADATA.md).
+
 ## Cache
 
 * Schluessel: Pfad, Dateigroesse, Aenderungszeit, `ANALYSIS_VERSION`

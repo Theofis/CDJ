@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from .loader import LoadedTrack, TrackLoader
+from .metadata import TrackTags
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,10 @@ class LoadRequest:
     path: str
     #: Frei nutzbare Zusatzdaten, kommen im Ergebnis unveraendert zurueck.
     context: dict[str, Any] = field(default_factory=dict)
+    #: Bereits bekannte Metadaten, etwa aus ``export.pdb``. Sie haben
+    #: Vorrang; sind sie vollstaendig, wird die Datei fuer die Tags nicht
+    #: mehr angefasst (siehe ``TrackLoader._metadata``).
+    known_tags: TrackTags | None = None
 
 
 @dataclass(frozen=True)
@@ -93,10 +98,20 @@ class AnalysisWorker:
     # ------------------------------------------------------------------
 
     def request(
-        self, deck_id: int, path: str | Path, **context: Any
+        self,
+        deck_id: int,
+        path: str | Path,
+        *,
+        known_tags: TrackTags | None = None,
+        **context: Any,
     ) -> LoadRequest:
         """Track laden lassen. Kehrt sofort zurueck."""
-        job = LoadRequest(deck_id=deck_id, path=str(path), context=context)
+        job = LoadRequest(
+            deck_id=deck_id,
+            path=str(path),
+            context=context,
+            known_tags=known_tags,
+        )
         self.requests.put(job)
         self.loader.metrics.queue_length = self.requests.qsize()
         return job
@@ -119,9 +134,17 @@ class AnalysisWorker:
 
     # ------------------------------------------------------------------
 
-    def load_now(self, deck_id: int, path: str | Path) -> LoadResult:
+    def load_now(
+        self,
+        deck_id: int,
+        path: str | Path,
+        *,
+        known_tags: TrackTags | None = None,
+    ) -> LoadResult:
         """Synchron laden - fuer Tests und Skripte, nicht fuer die GUI."""
-        job = LoadRequest(deck_id=deck_id, path=str(path))
+        job = LoadRequest(
+            deck_id=deck_id, path=str(path), known_tags=known_tags
+        )
         return self._handle(job)
 
     def register_resolver(
@@ -136,7 +159,7 @@ class AnalysisWorker:
             if separator and scheme in self.resolvers:
                 track = self.resolvers[scheme](identifier)
             else:
-                track = self.loader.load(job.path)
+                track = self.loader.load(job.path, known=job.known_tags)
         except Exception as error:
             self.loader.metrics.note_failure()
             return LoadResult(

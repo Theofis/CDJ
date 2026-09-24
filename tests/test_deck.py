@@ -339,7 +339,7 @@ class LoopTests(unittest.TestCase):
         self.assertFalse(deck.state.loop.active)
         self.assertIn("BEAT_LOOP (kein Beatgrid)", deck.unsupported)
 
-    def test_cue_loop_call_changes_the_length_of_a_running_loop(self) -> None:
+    def test_the_beat_buttons_change_the_length_of_a_running_loop(self) -> None:
         """CALL < / CALL > bei laufendem Loop: halbieren und verdoppeln.
 
         Am CDJ-3000 verkuerzen und verlaengern diese Tasten den laufenden
@@ -350,25 +350,25 @@ class LoopTests(unittest.TestCase):
         self.deck.execute(command(CommandType.BEAT_LOOP, 1, beats=8))
         start = self.deck.state.loop.in_s
 
-        self.deck.execute(command(CommandType.CUE_LOOP_CALL, 1, direction=-1))
+        self.deck.execute(command(CommandType.BEAT_LOOP, 1, beats=4.0, scale=0.5))
         loop = self.deck.state.loop
         self.assertTrue(loop.active)
         self.assertEqual(loop.beats, 4.0)
         # Der Anfang bleibt stehen - es wird nur das Ende verschoben.
         self.assertAlmostEqual(loop.in_s, start)
 
-        self.deck.execute(command(CommandType.CUE_LOOP_CALL, 1, direction=+1))
-        self.deck.execute(command(CommandType.CUE_LOOP_CALL, 1, direction=+1))
+        self.deck.execute(command(CommandType.BEAT_LOOP, 1, beats=8.0, scale=2.0))
+        self.deck.execute(command(CommandType.BEAT_LOOP, 1, beats=8.0, scale=2.0))
         self.assertEqual(self.deck.state.loop.beats, 16.0)
         self.assertAlmostEqual(self.deck.state.loop.in_s, start)
 
-    def test_cue_loop_call_without_a_loop_makes_four_or_eight_beats(self) -> None:
+    def test_the_beat_buttons_without_a_loop_make_four_or_eight_beats(self) -> None:
         self.deck.execute(command(CommandType.SEEK, 1, position_s=1.0))
-        self.deck.execute(command(CommandType.CUE_LOOP_CALL, 1, direction=-1))
+        self.deck.execute(command(CommandType.BEAT_LOOP, 1, beats=4.0, scale=0.5))
         self.assertEqual(self.deck.state.loop.beats, 4.0)
 
         self.deck.execute(command(CommandType.RELOOP_EXIT, 1))
-        self.deck.execute(command(CommandType.CUE_LOOP_CALL, 1, direction=+1))
+        self.deck.execute(command(CommandType.BEAT_LOOP, 1, beats=8.0, scale=2.0))
         self.assertEqual(self.deck.state.loop.beats, 8.0)
 
     def test_beat_loop_buttons_set_an_absolute_length(self) -> None:
@@ -528,48 +528,73 @@ class LoopAdjustTests(unittest.TestCase):
         self.assertAlmostEqual(loop.last_out_s, 13.0)
 
 
-class CallButtonTests(unittest.TestCase):
-    """CALL < und CALL >: Loop erzeugen oder Laenge aendern."""
+class BeatLoopButtonTests(unittest.TestCase):
+    """Die runden Taster **4 BEAT LOOP / 1/2X** und **8 BEAT LOOP / 2X**.
+
+    Sie tragen am Geraet zwei Beschriftungen: ohne laufenden Loop setzen
+    sie 4 bzw. 8 Beats, mit laufendem Loop halbieren bzw. verdoppeln sie.
+    Frueher lag das Halbieren/Verdoppeln auf den CALL-Tastern, weil es
+    keinen Cue-Speicher gab; die haben jetzt wieder ihre eigene Bedeutung.
+    """
 
     def setUp(self) -> None:
         self.deck = Deck(1)
         self.deck.load_track(make_track())
         self.deck.execute(command(CommandType.SEEK, 1, position_s=4.0))
 
-    def call(self, direction: int) -> None:
+    def beat_button(self, beats: float, scale: float) -> None:
         self.deck.execute(
-            command(CommandType.CUE_LOOP_CALL, 1, direction=direction)
+            command(CommandType.BEAT_LOOP, 1, beats=beats, scale=scale)
         )
 
-    def test_call_left_without_loop_makes_four_beats(self) -> None:
-        self.call(-1)
+    def four(self) -> None:
+        self.beat_button(4.0, 0.5)
+
+    def eight(self) -> None:
+        self.beat_button(8.0, 2.0)
+
+    def test_four_beat_without_loop_makes_four_beats(self) -> None:
+        self.four()
         loop = self.deck.state.loop
         self.assertTrue(loop.active)
         self.assertAlmostEqual(loop.length_s, 2.0)  # 4 Beats bei 120 BPM
 
-    def test_call_right_without_loop_makes_eight_beats(self) -> None:
-        self.call(+1)
+    def test_eight_beat_without_loop_makes_eight_beats(self) -> None:
+        self.eight()
         self.assertAlmostEqual(self.deck.state.loop.length_s, 4.0)
 
-    def test_call_left_halves_a_running_loop(self) -> None:
-        self.call(+1)
-        self.call(-1)
+    def test_four_beat_halves_a_running_loop(self) -> None:
+        self.eight()
+        self.four()
         self.assertAlmostEqual(self.deck.state.loop.length_s, 2.0)
         self.assertEqual(self.deck.state.loop.label(), "4")
 
-    def test_call_right_doubles_a_running_loop(self) -> None:
-        self.call(-1)
-        self.call(+1)
+    def test_eight_beat_doubles_a_running_loop(self) -> None:
+        self.four()
+        self.eight()
         self.assertAlmostEqual(self.deck.state.loop.length_s, 4.0)
+
+    def test_scaling_keeps_the_loop_active(self) -> None:
+        self.eight()
+        for _ in range(3):
+            self.four()
+            self.assertTrue(self.deck.state.loop.active)
+        self.assertAlmostEqual(self.deck.state.loop.length_s, 0.5)
+
+    def test_the_touch_panel_always_sets_the_length(self) -> None:
+        """Ohne ``scale`` - Panel und Pads - wird immer gesetzt."""
+        self.eight()
+        self.deck.execute(command(CommandType.BEAT_LOOP, 1, beats=4.0))
+        self.assertAlmostEqual(self.deck.state.loop.length_s, 2.0)
 
     def test_without_a_beatgrid_the_gap_is_recorded(self) -> None:
         deck = Deck(2)
         deck.load_track(make_track(beat_grid=None))
         deck.execute(
-            command(CommandType.CUE_LOOP_CALL, 2, direction=-1)
+            command(CommandType.BEAT_LOOP, 2, beats=4.0, scale=0.5)
         )
         self.assertFalse(deck.state.loop.active)
-        self.assertIn("CUE_LOOP_CALL (kein Beatgrid)", deck.unsupported)
+        self.assertIn("BEAT_LOOP (kein Beatgrid)", deck.unsupported)
 
 
 class BeatLoopPadTests(unittest.TestCase):
@@ -613,7 +638,7 @@ class BeatLoopPadTests(unittest.TestCase):
 
     def test_a_pad_does_not_leave_a_loop_it_did_not_set(self) -> None:
         """CALL < erzeugt 4 Beats - Pad E (auch 4 Beats) darf nicht beenden."""
-        self.deck.execute(command(CommandType.CUE_LOOP_CALL, 1, direction=-1))
+        self.deck.execute(command(CommandType.BEAT_LOOP, 1, beats=4.0, scale=0.5))
         self.assertTrue(self.deck.state.loop.active)
         self.pad(4)
         self.assertTrue(
@@ -747,14 +772,14 @@ class QuantizeTests(unittest.TestCase):
         self.quantize_on()
         self.deck.execute(command(CommandType.SEEK, 1, position_s=1.1))
         self.deck.execute(
-            command(CommandType.CUE_LOOP_CALL, 1, direction=-1)
+            command(CommandType.BEAT_LOOP, 1, beats=4.0, scale=0.5)
         )
         self.assertAlmostEqual(self.deck.state.loop.in_s, 1.0)
 
     def test_without_quantize_the_call_loop_starts_exactly(self) -> None:
         self.deck.execute(command(CommandType.SEEK, 1, position_s=1.1))
         self.deck.execute(
-            command(CommandType.CUE_LOOP_CALL, 1, direction=-1)
+            command(CommandType.BEAT_LOOP, 1, beats=4.0, scale=0.5)
         )
         self.assertAlmostEqual(self.deck.state.loop.in_s, 1.1)
 
@@ -881,10 +906,19 @@ class UnsupportedTests(unittest.TestCase):
     def test_missing_backends_are_recorded_not_faked(self) -> None:
         deck = Deck(1)
         deck.load_track(make_track())
-        deck.execute(command(CommandType.MEMORY, 1))
         deck.execute(command(CommandType.KEY_SYNC, 1))
-        self.assertTrue(any("MEMORY" in entry for entry in deck.unsupported))
         self.assertTrue(any("KEY_SYNC" in entry for entry in deck.unsupported))
+
+    def test_memory_is_no_longer_unsupported(self) -> None:
+        """MEMORY merkt jetzt wirklich - im Speicher, nicht auf dem Stick."""
+        deck = Deck(1)
+        deck.load_track(make_track())
+        deck.execute(command(CommandType.SEEK, 1, position_s=12.0))
+        deck.execute(command(CommandType.CUE, 1, pressed=True))
+        deck.execute(command(CommandType.CUE, 1, pressed=False))
+        deck.execute(command(CommandType.MEMORY, 1))
+        self.assertFalse(any("MEMORY" in entry for entry in deck.unsupported))
+        self.assertEqual(len(deck.state.track.memory_cues), 1)
 
     def test_track_search_is_no_longer_unsupported(self) -> None:
         """TRACK SEARCH vermerkt nichts mehr, es fordert den Wechsel an.
@@ -1018,6 +1052,9 @@ class MappingTests(unittest.TestCase):
         analog_and_special = {
             ids.TEMPO_FADER, ids.VINYL_SPEED_ADJUST,
             ids.BROWSE_ROTATE, ids.JOG_MOVE, ids.DIRECTION,
+            # Kurz/lang auf derselben Taste - der Mapper entscheidet das
+            # aus der Haltedauer und nicht ueber eine Tabelle.
+            ids.TIME_MODE,
         }
         covered = (
             set(_ON_PRESS) | set(_MOMENTARY) | set(_PAD_INDEX)

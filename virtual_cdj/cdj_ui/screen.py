@@ -17,6 +17,7 @@ import time
 import tkinter as tk
 from collections.abc import Callable
 
+from ..core.model import LONG_PRESS_S
 from ..deck.commands import CommandType, DeckCommand, Views, command
 from ..deck.display_state import (
     BrowseContext,
@@ -55,10 +56,6 @@ from .waveform_header import CdjWaveformHeader
 
 #: Bildwiederholung. 16 ms entspricht rund 60 FPS.
 FRAME_INTERVAL_MS = 16
-
-#: Ab dieser Haltedauer gilt ein Tastendruck als "gedrueckt gehalten"
-#: (Handbuch S. 22, 25, 38).
-LONG_PRESS_S = 0.5
 
 #: Schritt des Drehreglers im Rastereinstellungsmodus (S. 72). Am Geraet
 #: verschiebt eine Rastung das Beatgrid um wenige Millisekunden; 10 ms sind

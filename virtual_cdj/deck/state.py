@@ -112,6 +112,74 @@ class CueKind(str, Enum):
     LOOP = "LOOP"
 
 
+class AutoCueLevel(str, Enum):
+    """Ansprechschwelle von AUTO CUE (Handbuch S. 44, 78).
+
+    Am Geraet ist das eine Liste von Pegeln plus dem Sonderfall ``MEMORY``.
+    Die Pegel sind die Grenze, ab der ein Fenster als "hier setzt der Ton
+    ein" gilt; ``MEMORY`` bedeutet stattdessen "nimm den gespeicherten
+    Cue-Punkt". ``MEMORY`` ist am Geraet die Werkseinstellung.
+
+    Die Zahlenwerte stehen hier vollstaendig, obwohl die Bedienoberflaeche
+    sie noch nicht umschalten kann: sie sind die Reihe des Geraets, nicht
+    eine Auswahl davon. Die Umschaltung kommt spaeter dazu, ohne dass sich
+    an dieser Stelle etwas aendert.
+
+    **Die Beschriftungen sind die des Geraets, die Wirkung ist es noch
+    nicht.** Am CDJ-3000 sind die Werte absolute Pegel (dBFS). Hier
+    arbeitet die Erkennung auf Waveform-Daten, die auf den lautesten Punkt
+    des Tracks normiert sind - der Zahlenwert wirkt deshalb derzeit
+    **relativ zum Trackmaximum**. Deshalb heisst die Eigenschaft unten
+    ``threshold_db_below_peak`` und nicht ``threshold_dbfs``: der Name
+    soll nicht mehr behaupten, als die Daten hergeben. Siehe
+    ``deck/auto_cue.py`` und ``docs/AUTO_CUE.md``.
+    """
+
+    MEMORY = "MEMORY"
+    MINUS_78 = "-78dB"
+    MINUS_72 = "-72dB"
+    MINUS_66 = "-66dB"
+    MINUS_60 = "-60dB"
+    MINUS_54 = "-54dB"
+    MINUS_48 = "-48dB"
+    MINUS_42 = "-42dB"
+    MINUS_36 = "-36dB"
+
+    @property
+    def threshold_db_below_peak(self) -> float | None:
+        """Schwelle in dB **unter dem Trackmaximum**.
+
+        ``None`` beim Sonderfall ``MEMORY`` - dort wird nicht gemessen,
+        sondern ein gespeicherter Punkt genommen.
+
+        Am Geraet ist dieselbe Zahl ein absoluter Pegel. Solange die
+        Analyse ihre Peaks trackweise normiert, ist sie hier relativ; der
+        Name sagt das. Wird der absolute Spitzenwert einmal mitgeliefert,
+        kommt daneben ein ``threshold_dbfs`` - der Aufrufer muss dann
+        entscheiden, welche Bedeutung gilt.
+        """
+        if self is AutoCueLevel.MEMORY:
+            return None
+        return float(self.value.removesuffix("dB"))
+
+
+#: Die Reihe des Geraets in Anzeigereihenfolge (leiseste Schwelle zuerst).
+AUTO_CUE_LEVELS: tuple[AutoCueLevel, ...] = (
+    AutoCueLevel.MEMORY,
+    AutoCueLevel.MINUS_78,
+    AutoCueLevel.MINUS_72,
+    AutoCueLevel.MINUS_66,
+    AutoCueLevel.MINUS_60,
+    AutoCueLevel.MINUS_54,
+    AutoCueLevel.MINUS_48,
+    AutoCueLevel.MINUS_42,
+    AutoCueLevel.MINUS_36,
+)
+
+#: Werkseinstellung wie am Geraet (Handbuch S. 78): ``MEMORY``.
+DEFAULT_AUTO_CUE_LEVEL = AutoCueLevel.MEMORY
+
+
 #: Beschriftungen der acht Performance-Pads.
 PAD_LABELS: tuple[str, ...] = ("A", "B", "C", "D", "E", "F", "G", "H")
 
@@ -701,6 +769,28 @@ class DeckState:
     #: 0.125, 0.25, 0.5 oder 1.0 - siehe ``deck/quantize.py``.
     quantize_beats: float = 1.0
     hot_cue_auto_load: bool = False
+
+    # -- Memory Cues / Loops ----------------------------------------------
+    #
+    # Die Punkte selbst stehen in ``track.memory_cues`` - dort liegen auch
+    # die aus rekordbox importierten. Hier steht nur, **welcher** davon
+    # gerade ueber CALL angewaehlt ist; DELETE bezieht sich darauf.
+    # ``None`` heisst: keiner angewaehlt, DELETE wirkt wie bisher als
+    # Modifikator fuer die Hotcues.
+    memory_index: int | None = None
+
+    #: AUTO CUE: nach dem Laden an den ersten Audioeinsatz springen und
+    #: dort warten, statt bei 0 zu stehen (Handbuch S. 44).
+    auto_cue: bool = False
+
+    #: Ansprechschwelle von AUTO CUE. Nur ``MEMORY`` benutzt gespeicherte
+    #: Cue-Punkte; alle Pegelstufen suchen den Einsatz im Signal.
+    auto_cue_level: AutoCueLevel = DEFAULT_AUTO_CUE_LEVEL
+
+    #: Manueller Hotcue-Aufrufmodus. Darin setzt ein leeres Pad **keinen**
+    #: neuen Hotcue; belegte Pads werden aufgerufen. Schuetzt davor, beim
+    #: Suchen versehentlich einen Hotcue zu ueberschreiben.
+    hot_cue_call_mode: bool = False
 
     audio_status: AudioStatus = AudioStatus.NO_BACKEND
 

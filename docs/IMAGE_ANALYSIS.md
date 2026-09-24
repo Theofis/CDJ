@@ -112,18 +112,26 @@ Beat-Jump-Richtungen. Die beiden runden Taster darueber starten einen 4- bzw.
 | runde Beat-Loop-Taster | `BEAT_LOOP_4`, `BEAT_LOOP_8` |
 | rechteckige Beat-Jump-Taster | `BEAT_JUMP_PREV`, `BEAT_JUMP_NEXT` |
 | Pads nicht fest als Hotcues | Pads heissen `PAD_A` ... `PAD_H`, Gruppe `PERFORMANCE_PADS`, ohne Funktionszuordnung |
-| **kein** `AUTO CUE` | keine ID und keine Beschriftung enthaelt "AUTO CUE"; per Test abgesichert |
+| `AUTO CUE` ohne eigene Taste | AUTO CUE sitzt als **langer Druck** auf `TIME_MODE` ("TIME MODE / AUTO CUE"). Es gibt keine ID, die "AUTO_CUE" heisst; per Test abgesichert |
 | Bild hat Vorrang vor dem Pioneer-Layout | nicht im Bild erkennbare Referenz-Bedienelemente fehlen bewusst, siehe unten |
 
 Bewusst **nicht** uebernommen, obwohl am Referenzgeraet vorhanden:
-`VINYL/CDJ`, `JOG ADJUST`, `TIME MODE`, `AUTO CUE`, Netzschalter.
+`VINYL/CDJ`, `JOG ADJUST`, Netzschalter.
+
+`TIME MODE / AUTO CUE` stand hier ebenfalls, weil der Taster im
+Referenzbild nicht zu erkennen war. Der Erbauer hat bestaetigt, dass
+das Bedienfeld ihn besitzt; seit dem Nachtrag steht er in
+`controls.py`. Er ist damit das erste Bedienelement, das **nicht** aus
+dem Bild stammt - deshalb hier vermerkt.
 
 ## Bilanz
 
-* 55 Eingaenge, keine eigenstaendige Anzeige (alle LEDs sitzen in Tastern)
+* 56 Eingaenge, keine eigenstaendige Anzeige (alle LEDs sitzen in Tastern)
 * davon 1 mit Status *ungeklaert*
-* Typen: 50 Taster, 1 Fader, 1 Potentiometer, 1 Encoder, 1 Schalter,
+* Typen: 51 Taster, 1 Fader, 1 Potentiometer, 1 Encoder, 1 Schalter,
   1 Jogwheel (`JOG_TOUCH` ist als Taster mitgezaehlt)
+* 55 davon aus dem Bild, 1 vom Erbauer nachgetragen
+  (`TIME MODE / AUTO CUE`)
 * kein Joystick im Bild erkannt; `JoystickWidget` liegt bereit, falls sich
   das Bedienelement oben rechts als Joystick herausstellt
 

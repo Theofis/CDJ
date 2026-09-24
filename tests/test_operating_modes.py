@@ -138,6 +138,7 @@ class OperatingModeTests(unittest.TestCase):
             start_audio=False,
             settings_path=Path(self.directory.name) / "application.json",
             backend_output=lambda _line: None,
+            operating_mode=OperatingMode.CDJ,
         )
         try:
             application.virtual_source.press(ids.SHIFT)
@@ -165,6 +166,7 @@ class OperatingModeTests(unittest.TestCase):
             settings_path=Path(self.directory.name) / "application.json",
             button_settings_path=Path(self.directory.name) / "buttons.json",
             backend_output=output.append,
+            operating_mode=OperatingMode.CDJ,
         )
         try:
             application.button_customizations.set(
@@ -191,6 +193,7 @@ class OperatingModeTests(unittest.TestCase):
             settings_path=Path(self.directory.name) / "application.json",
             button_settings_path=Path(self.directory.name) / "buttons.json",
             backend_output=output.append,
+            operating_mode=OperatingMode.CDJ,
         )
         try:
             application.button_customizations.set(

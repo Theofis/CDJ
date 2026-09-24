@@ -19,6 +19,28 @@ siehe [docs/AUDIO.md](docs/AUDIO.md). Die vollstaendige Loop-Bedienung
 der Jog Mode VINYL/CDJ stehen in
 [docs/PLAYER_MODES.md](docs/PLAYER_MODES.md).
 
+**AUTO CUE** haelt einen neu geladenen Track an der Stelle, an der es
+losgeht, statt bei 0:00. Welche das ist, entscheidet AUTO CUE LEVEL: in
+der Werkseinstellung `MEMORY` der fruehste gespeicherte Cue-Punkt, auf
+einer Pegelstufe der erste Audioeinsatz - gesucht in den bereits
+berechneten Waveform-Daten, nicht neu analysiert. Hot Cues gelten
+ausdruecklich nie als Ersatz. Die Taste `TIME MODE / AUTO CUE` traegt
+beide Bedeutungen: kurz gedrueckt die Zeitanzeige, lang gedrueckt AUTO
+CUE. Details, Schwellenreihe und warum die dB-Werte hier noch keine dBFS
+sind: [docs/AUTO_CUE.md](docs/AUTO_CUE.md).
+
+**Metadaten** (Titel, Interpret, Genre) werden getrennt von der
+Audioanalyse geholt: erst analysieren, dann Tags - und die Tags in einem
+eigenen kurzlebigen Prozess, weil das Lesen ueber `mutagen` den ganzen
+Player mitnehmen konnte. Faellt es aus, sind Waveform, Beatgrid und BPM
+trotzdem da. Was aus rekordbox bekannt ist, hat Vorrang und wird nicht
+aus der Datei ersetzt: [docs/METADATA.md](docs/METADATA.md).
+
+**Soak-/Dauertest:** separater Supervisor mit echtem Player, Read-only-USB-Schutz,
+Fehlerpaketen und Replay: [docs/SOAK_TEST.md](docs/SOAK_TEST.md).
+Der erste echte 30-Minuten-Lauf setzt einen auf Betriebssystemebene
+schreibgeschützten USB-Stick voraus.
+
 **Rekordbox-USB-Sticks** werden erkannt und im Nur-Lese-Modus eingelesen:
 Datentraeger dynamisch (kein fester Laufwerksbuchstabe), `export.pdb`
 vollstaendig gelesen, SOURCE und BROWSE arbeiten mit echten Tracks,
@@ -68,6 +90,32 @@ python run_cdj.py --fullscreen   # Kiosk-Modus fuer den 7-Zoll-Schirm
 python run_cdj.py --debug        # Entwicklungsanzeige
 python run_cdj.py --no-panel     # nur das Display
 ```
+
+Interne ProLink-Simulation als zweiter Prozess:
+
+```bash
+# Terminal 1: externe Testquelle mit eigenem Entwicklerfenster
+python -m virtual_cdj.simulator
+
+# Terminal 2: normale CDJ-Anwendung, lokales Deck 3
+python run_cdj.py --decks 3 --prolink-source simulator
+```
+
+Der Simulator emuliert keine Pioneer-Netzwerkpakete. Er bedient die interne
+Provider-Schnittstelle ueber localhost TCP; Architektur, Optionen und Grenzen:
+[docs/PROLINK_PHASE1.md](docs/PROLINK_PHASE1.md).
+
+Echtes PRO DJ LINK strikt passiv und read-only:
+
+```bash
+python run_cdj.py --prolink-source real --no-audio
+python run_cdj.py --prolink-source real \
+  --prolink-interface 169.254.10.20 --no-audio
+```
+
+Der Real-Provider sendet nichts und beansprucht keine Playernummer. Gelesene
+Pakettypen, die passive Statusgrenze und spaetere Hardwaretests stehen in
+[docs/PROLINK_PHASE2.md](docs/PROLINK_PHASE2.md).
 
 Tasten im CDJ-Display: `F1` Menue, `F2` Pruefung, `Esc` zurueck zur
 Performance (dort: Kiosk-Modus verlassen), `F11` Fullscreen umschalten,

@@ -30,6 +30,7 @@ Threads (Abschnitt 9):
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable, Iterable
 from pathlib import Path
@@ -37,6 +38,7 @@ from pathlib import Path
 from .audio.cache import AnalysisCache
 from .audio.engine import AudioEngine
 from .audio.loader import TrackLoader
+from .audio.metadata import TrackTags
 from .audio.worker import AnalysisWorker, LoadResult
 from .core import ids
 from .core.button_customization import ButtonCustomizationStore
@@ -58,11 +60,35 @@ from .jog import JogScanner
 from .media_library.devices import MediaDevice, UsbDeviceService
 from .media_library.sources import build_library
 from .media_library.taglist import TagListService
+from .prolink.provider import NullProLinkProvider, ProLinkProvider
 from .shell.calibration import CalibrationStore
 from .shell.hardware_state import HardwareState
 from .shell.modes import ApplicationMode, ModeController
 from .shell.router import InputRouter
 from .sources.virtual import VirtualSource
+from .sync import MasterManager, MasterState, SyncEngine, SyncTarget
+
+log = logging.getLogger(__name__)
+
+
+def library_tags(track: TrackInfo | None) -> TrackTags | None:
+    """Was die Bibliothek ueber einen Track weiss, als Metadatensatz.
+
+    Fuer rekordbox-Tracks kommt das aus ``export.pdb``. Leere Felder
+    bleiben leer: der Loader ergaenzt sie dann - und nur sie - aus den
+    Datei-Tags.
+    """
+    if track is None:
+        return None
+    tags = TrackTags(
+        title=track.title,
+        artist=track.artist,
+        album=track.album,
+        genre=track.genre,
+        label=track.label,
+    )
+    return None if tags.is_empty else tags
+
 
 #: Ab dieser Spieldauer landet ein Track im Verlauf (Handbuch S. 42).
 HISTORY_AFTER_S = 60.0
@@ -106,6 +132,12 @@ class CdjApplication:
         #: schaltet sie ein (``--no-usb`` schaltet sie wieder aus).
         usb: bool = False,
         backend_output: OutputSink = print,
+        prolink_provider: ProLinkProvider | None = None,
+        #: Erzwungener Betriebsmodus. Ohne Angabe gilt die gespeicherte
+        #: Einstellung - das ist das normale Verhalten des Programms.
+        #: Tests setzen den Modus ausdruecklich, damit ihr Ergebnis nicht
+        #: davon abhaengt, was zuletzt in ``config/settings.json`` stand.
+        operating_mode: OperatingMode | str | None = None,
     ) -> None:
         self.deck_ids = list(deck_ids)
         self._backend_output = backend_output
@@ -160,6 +192,12 @@ class CdjApplication:
             self.midi_backend,
             self.cdj_backend,
             settings_path=settings_path,
+            mode=(
+                operating_mode
+                if operating_mode is None
+                or isinstance(operating_mode, OperatingMode)
+                else OperatingMode(operating_mode)
+            ),
         )
         self.controllers: dict[int, DeckController] = {
             deck_id: DeckController(deck_id, self.mode_manager)
@@ -168,6 +206,24 @@ class CdjApplication:
         #: Rueckwaertskompatibler Name fuer GUI und bestehende Aufrufer. Die
         #: Provider sind jetzt die zentralen DeckController.
         self.providers: dict[int, DeckController] = dict(self.controllers)
+
+        #: Externe Player bleiben eine eigene Domäne und werden nicht als
+        #: lokale Decks in ``self.decks`` eingeschleust. Der Provider kann
+        #: Simulator, später echter ProLink-Adapter oder Nullquelle sein.
+        self.prolink_provider: ProLinkProvider = (
+            prolink_provider if prolink_provider is not None
+            else NullProLinkProvider()
+        )
+        self.master_manager = MasterManager()
+        self.sync_engine = SyncEngine()
+        self._prolink_unsubscribes = [
+            self.prolink_provider.subscribe_player_state(
+                self.master_manager.update_remote
+            ),
+            self.prolink_provider.subscribe_beat_events(
+                self.master_manager.update_beat
+            ),
+        ]
 
         # Eine Eingabekette, die auf ein Deck zeigt. Weitere Bedienfelder
         # bekommen jeweils eigene Ketten mit eigener Deck-ID.
@@ -212,6 +268,10 @@ class CdjApplication:
 
         #: Wird nach jedem geladenen Track aufgerufen (GUI-Thread).
         self.on_track_loaded: list[Callable[[LoadResult], None]] = []
+        #: Alle Ladeergebnisse, auch Decoderfehler; Beobachter im GUI-Thread.
+        #: Erlaubt Diagnose ohne Eingriff in Worker-Queues oder Playerzustand.
+        self.on_load_finished: list[Callable[[LoadResult], None]] = []
+        self.on_load_requested: list[Callable[[int, str], None]] = []
         #: Wird gerufen, wenn sich die Quellenliste geaendert hat - ein
         #: Datentraeger kam hinzu, wurde fertig gelesen oder verschwand.
         #: Die Oberflaeche haengt sich hier ein, um SOURCE und BROWSE neu
@@ -239,6 +299,7 @@ class CdjApplication:
             self._enable_usb()
 
         self.worker.start()
+        self.prolink_provider.start()
 
     # ------------------------------------------------------------------
 
@@ -280,7 +341,7 @@ class CdjApplication:
     # Datentraeger (USB)
     # ------------------------------------------------------------------
 
-    def _enable_usb(self) -> None:
+    def _enable_usb(self, service: UsbDeviceService | None = None) -> None:
         """Datentraeger-Erkennung anmelden.
 
         Der Dienst laeuft von hier an mit: ``tick()`` fragt ihn, er meldet
@@ -289,7 +350,11 @@ class CdjApplication:
         von hier aus angefasst - sie liest ``self.library`` ohnehin bei
         jedem Bild neu und wird ueber ``on_sources_changed`` nur angestossen.
         """
-        service = UsbDeviceService()
+        # ``service`` ist nur fuer Tests da: dort steht ein Dienst mit
+        # eingesetzter Laufwerksliste, damit kein Test die echten Laufwerke
+        # des Rechners abfragt.
+        if service is None:
+            service = UsbDeviceService()
         service.on_attached.append(self._usb_changed)
         service.on_updated.append(self._usb_changed)
         service.on_detached.append(self._usb_detached)
@@ -335,6 +400,67 @@ class CdjApplication:
             except Exception:  # pragma: no cover - defekter Zuhoerer
                 pass
 
+    def stop_media(self, deck_id: int = 0) -> str:
+        """USB STOP - einen Datentraeger als Quelle freigeben (S. 18).
+
+        Zu trennen sind zwei Dinge, die gern verwechselt werden:
+
+        * **Quelle trennen** (das hier): das Programm gibt den Stick frei,
+          er verschwindet aus SOURCE, neu geladen wird von dort nichts mehr.
+        * **Laufwerk auswerfen**: Sache des Betriebssystems. Es gibt hier
+          bewusst keinen erzwungenen Auswurf - siehe
+          ``UsbDeviceService.disconnect``.
+
+        Welcher Datentraeger gemeint ist, entscheidet diese Reihenfolge:
+
+        1. der, von dem der Track dieses Decks stammt,
+        2. sonst der einzige angeschlossene - bei genau einem ist die
+           Absicht eindeutig,
+        3. sonst keiner. Lieber nichts trennen als den falschen Stick.
+
+        Rueckgabe: Kennung des freigegebenen Geraets, sonst leer.
+        """
+        if self.usb is None:
+            return ""
+        candidates = [
+            device for device in self.usb.devices if device.is_media_source
+        ]
+        if not candidates:
+            return ""
+        target = None
+        source_id = self._deck_source_id(deck_id)
+        if source_id:
+            for device in candidates:
+                if device.source_id == source_id:
+                    target = device
+                    break
+        if target is None and len(candidates) == 1:
+            target = candidates[0]
+        if target is None:
+            log.info(
+                "USB STOP ohne eindeutiges Ziel: %d Datentraeger angeschlossen",
+                len(candidates),
+            )
+            return ""
+        device_id = target.device_id
+        # Das Abmelden laeuft ueber denselben Rueckruf wie das Abziehen:
+        # ``_usb_detached`` entfernt die Quelle aus der Bibliothek. Ein
+        # bereits geladener Track spielt weiter, seine Samples liegen im
+        # Speicher.
+        self.usb.disconnect(device_id)
+        return device_id
+
+    def _deck_source_id(self, deck_id: int) -> str:
+        """Quelle, aus der der geladene Track dieses Decks stammt."""
+        deck = self.decks.get(deck_id)
+        if deck is None or deck.state.track is None:
+            return ""
+        track_id = deck.state.track.track_id
+        for library in self.library.libraries:
+            if library.track(track_id) is not None:
+                return library.source_id
+        return ""
+
     def refresh_sources(self) -> None:
         """Manuelles Aktualisieren der Quellen (Handbuch S. 18).
 
@@ -357,17 +483,83 @@ class CdjApplication:
         Unterschied.
         """
         from .deck.display_state import MasterDeckView
+        from .deck.state import WaveformSet
 
-        for deck_id, controller in self.controllers.items():
-            state = controller.get_state()
-            if state.is_master:
-                return MasterDeckView.from_deck_state(state)
+        master = self.master_state()
+        if master is not None and master.source_type == "local":
+            controller = self.controllers.get(master.player_id or -1)
+            if controller is not None:
+                return MasterDeckView.from_deck_state(controller.get_state())
+        if master is not None and master.source_type == "prolink":
+            track_id = master.track_id or ""
+            metadata = (
+                self.prolink_provider.get_track_metadata(track_id)
+                if track_id else None
+            )
+            analysis = (
+                self.prolink_provider.get_track_analysis(track_id)
+                if track_id else None
+            )
+            levels = {}
+            if analysis is not None:
+                if analysis.waveform_preview is not None:
+                    levels["overview"] = analysis.waveform_preview
+                if analysis.waveform_detail is not None:
+                    levels["detailed"] = analysis.waveform_detail
+            player = next(
+                (
+                    state for state in self.prolink_provider.get_players()
+                    if state.player_id == master.player_id
+                ),
+                None,
+            )
+            duration_ms = (
+                metadata.duration_ms if metadata is not None
+                else player.duration_ms if player is not None else None
+            )
+            beat_number = master.beat_number or 0
+            return MasterDeckView(
+                source_type="prolink",
+                player_id=master.player_id or 0,
+                track_id=track_id,
+                title=(metadata.title or "") if metadata is not None else track_id,
+                artist=(metadata.artist or "") if metadata is not None else "",
+                bpm=master.bpm or 0.0,
+                key=(metadata.key or master.key or "") if metadata else (master.key or ""),
+                position_s=(master.position_ms or 0.0) / 1000.0,
+                duration_s=(duration_ms or 0) / 1000.0,
+                bar=(beat_number - 1) // 4 + 1 if beat_number > 0 else 0,
+                beat=master.beat_in_bar or 0,
+                beat_phase=master.phase or 0.0,
+                is_master=True,
+                is_playing=master.playing,
+                beat_grid=analysis.beatgrid if analysis is not None else None,
+                waveform=WaveformSet(levels) if levels else None,
+            )
         # Kein Deck ist Master: ein anderes Deck mit Track als Vergleich.
         for deck_id, controller in self.controllers.items():
             state = controller.get_state()
             if deck_id != own_deck_id and state.has_track:
                 return MasterDeckView.from_deck_state(state)
         return None
+
+    def master_state(self) -> MasterState | None:
+        """Normalisierten Master liefern, unabhängig von seiner Quelle."""
+        now = time.monotonic_ns()
+        for controller in self.controllers.values():
+            self.master_manager.update_local(
+                controller.get_state(), observed_ns=now
+            )
+        return self.master_manager.get_master(now_ns=now)
+
+    def sync_target(self, deck_id: int) -> SyncTarget:
+        """Aktuelles Sync-Ziel eines lokalen Decks; ohne Audio-Seiteneffekt."""
+        controller = self.controllers.get(deck_id)
+        if controller is None:
+            return SyncTarget(enabled=False)
+        return self.sync_engine.target_for(
+            controller.get_state(), self.master_state()
+        )
 
     def track_source(self):
         """Flache Trackliste der Standardquelle.
@@ -405,7 +597,11 @@ class CdjApplication:
         # ueber die Track-ID, die Bibliothek liefert den Pfad dazu.
         track = self.library.track(track_id)
         path = track.file_path if track is not None and track.file_path else track_id
-        self.load_track(deck_id, path)
+        # Was die Bibliothek schon weiss, wird mitgegeben. Bei einem
+        # rekordbox-Stick steht das in ``export.pdb`` und ist besser als
+        # jeder Dateitag - es muss nicht aus der Datei nachgelesen und darf
+        # von dort auch nicht ersetzt werden.
+        self.load_track(deck_id, path, known_tags=library_tags(track))
 
     def track_search(self, deck_id: int, direction: int) -> None:
         """Nachbartrack laden - TRACK SEARCH |<< / >>| (Handbuch S. 48).
@@ -513,6 +709,12 @@ class CdjApplication:
                 mapper.reset_modifiers()
             self.modes.set_mode(ApplicationMode.SETTINGS)
             return
+        if cmd.type is CommandType.USB_STOP:
+            # Medienverwaltung ist Sache der Anwendung, nicht eines Decks:
+            # beide Decks sehen dieselben Datentraeger. Das Deck bekommt
+            # das Kommando deshalb gar nicht erst zu sehen.
+            self.stop_media(cmd.deck_id)
+            return
         sink = self._sinks.get(cmd.deck_id)
         if sink is None:
             controller = self.controllers.get(cmd.deck_id)
@@ -574,9 +776,22 @@ class CdjApplication:
 
     # ------------------------------------------------------------------
 
-    def load_track(self, deck_id: int, path: str | Path) -> None:
-        """Track im Hintergrund laden. Die GUI blockiert nicht."""
-        self.worker.request(deck_id, path)
+    def load_track(
+        self,
+        deck_id: int,
+        path: str | Path,
+        *,
+        known_tags: TrackTags | None = None,
+    ) -> None:
+        """Track im Hintergrund laden. Die GUI blockiert nicht.
+
+        ``known_tags`` sind Metadaten, die schon bekannt sind - etwa aus
+        ``export.pdb`` eines rekordbox-Sticks. Sie haben Vorrang und
+        ersparen im Idealfall das Lesen der Datei-Tags ganz.
+        """
+        self.worker.request(deck_id, path, known_tags=known_tags)
+        for hook in self.on_load_requested:
+            hook(deck_id, str(path))
 
     def load_track_now(self, deck_id: int, path: str | Path) -> LoadResult:
         """Synchron laden - fuer Tests und Skripte."""
@@ -593,6 +808,8 @@ class CdjApplication:
 
     def _apply(self, result: LoadResult) -> None:
         if not result.ok or result.track is None:
+            for hook in self.on_load_finished:
+                hook(result)
             return
         deck = self.decks.get(result.request.deck_id)
         if deck is None:
@@ -617,6 +834,8 @@ class CdjApplication:
             deck._update(track_number=number)  # noqa: SLF001
         self.audio.memory_mb()
         for hook in self.on_track_loaded:
+            hook(result)
+        for hook in self.on_load_finished:
             hook(result)
 
     # ------------------------------------------------------------------
@@ -676,6 +895,9 @@ class CdjApplication:
 
     def tick(self) -> None:
         """Regelmaessig aus dem GUI-Thread aufrufen."""
+        # Zustellung absichtlich hier: Listener laufen im Anwendungsthread,
+        # nie im TCP-Thread des Simulatorproviders.
+        self.prolink_provider.poll()
         self._sync_pad_mode_leds()
         # Jog zuerst: die gesammelte Bewegung des virtuellen Jogwheels wird
         # als **ein** Ereignis je Bild weitergegeben - derselbe Weg, den
@@ -688,12 +910,20 @@ class CdjApplication:
             # dazwischen ist das ein Vergleich auf dem letzten Stand.
             self.usb.poll()
         self.mode_manager.tick()
+        now_ns = time.monotonic_ns()
+        for controller in self.controllers.values():
+            self.master_manager.update_local(
+                controller.get_state(), observed_ns=now_ns
+            )
         now = time.monotonic()
         self.update_history(now - self._last_history_tick)
         self._last_history_tick = now
 
     def close(self) -> None:
         self._unsubscribe_button_output()
+        self.prolink_provider.stop()
+        for unsubscribe in self._prolink_unsubscribes:
+            unsubscribe()
         if self.usb is not None:
             self.usb.close()
         self.worker.stop()

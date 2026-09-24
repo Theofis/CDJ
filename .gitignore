@@ -38,3 +38,6 @@ config/calibration.json
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Dauerlauf-Protokolle und Failure Packages
+soak_results/

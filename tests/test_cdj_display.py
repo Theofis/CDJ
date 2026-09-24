@@ -31,6 +31,7 @@ from virtual_cdj.deck.display_state import (
     related_keys,
 )
 from virtual_cdj.deck.engine import Deck
+from virtual_cdj.deck.mode_manager import OperatingMode
 from virtual_cdj.deck.provider import LocalDeckStateProvider
 from virtual_cdj.deck.state import CueKind, PlayState
 from virtual_cdj.demo import (
@@ -1223,7 +1224,10 @@ class ApplicationDemoTests(unittest.TestCase):
 
         from virtual_cdj.app import CdjApplication
 
-        app = CdjApplication([1, 2], start_audio=False, demo=True)
+        app = CdjApplication(
+            [1, 2], start_audio=False, demo=True,
+            operating_mode=OperatingMode.CDJ,
+        )
         try:
             self.assertEqual(
                 app.demo_track_ids(),
@@ -1251,7 +1255,10 @@ class ApplicationDemoTests(unittest.TestCase):
     def test_master_view_finds_the_master_deck(self) -> None:
         from virtual_cdj.app import CdjApplication
 
-        app = CdjApplication([1, 2], start_audio=False, demo=True)
+        app = CdjApplication(
+            [1, 2], start_audio=False, demo=True,
+            operating_mode=OperatingMode.CDJ,
+        )
         try:
             app.load_track_now(1, f"demo://{BROKEN_WINDOW.track_id}")
             app.load_track_now(2, f"demo://{STEEL_PRESSURE.track_id}")
@@ -1268,7 +1275,10 @@ class ApplicationDemoTests(unittest.TestCase):
     def test_track_source_feeds_the_browser(self) -> None:
         from virtual_cdj.app import CdjApplication
 
-        app = CdjApplication([1], start_audio=False, demo=True)
+        app = CdjApplication(
+            [1], start_audio=False, demo=True,
+            operating_mode=OperatingMode.CDJ,
+        )
         try:
             infos = app.track_source()
             self.assertEqual(len(infos), 2)

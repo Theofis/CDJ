@@ -28,9 +28,25 @@ class CommandType(str, Enum):
     # Performance Pads
     PAD = "PAD"  # ``index`` 0..7, ``pressed``
     PAD_MODE = "PAD_MODE"  # ``mode``: HOT_CUE / BEAT_JUMP
-    DELETE = "DELETE"  # ``pressed`` - Modifikator zum Loeschen
-    MEMORY = "MEMORY"
-    CUE_LOOP_CALL = "CUE_LOOP_CALL"  # ``direction``
+    #: CALL/DELETE als **Hotcue**-Funktion: gehalten der Modifikator zum
+    #: Loeschen eines Hotcues, kurz gedrueckt der Aufrufmodus. ``pressed``.
+    #:
+    #: Ausdruecklich **nicht** das Loeschen gemerkter Punkte - das ist
+    #: ``MEMORY_DELETE``. Am Geraet sitzen beide auf derselben Taste; hier
+    #: sind sie zwei Kommandos, damit nichts stillschweigend dasselbe
+    #: bedeutet (siehe ``Deck._cmd_delete``).
+    DELETE = "DELETE"
+    MEMORY = "MEMORY"  # Cue-Punkt oder laufenden Loop merken
+    #: Den ueber CUE/LOOP CALL angewaehlten Memory Cue / Memory Loop
+    #: loeschen. Eigenes Kommando, eigener Handler; erreichbar ueber den
+    #: Tastenverlauf **und** unabhaengig davon ueber SHIFT + DELETE.
+    MEMORY_DELETE = "MEMORY_DELETE"
+    CUE_LOOP_CALL = "CUE_LOOP_CALL"  # ``direction``: gemerkte Punkte
+    #: Manueller Hotcue-Aufrufmodus ein/aus - am Geraet der kurze Druck
+    #: auf CALL/DELETE. Bleibt als Kommando fuer den direkten Weg.
+    HOT_CUE_CALL_MODE = "HOT_CUE_CALL_MODE"
+    #: AUTO CUE ein/aus - langer Druck auf die Zeitmodus-Taste.
+    AUTO_CUE = "AUTO_CUE"
 
     # Loop
     LOOP_IN = "LOOP_IN"

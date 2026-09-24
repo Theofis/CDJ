@@ -72,6 +72,10 @@ class AnalysisMetrics:
     analysed: int = 0
     cached: int = 0
     failed: int = 0
+    #: Ladevorgaenge, bei denen nur die Datei-Tags nicht gelesen werden
+    #: konnten. **Kein** Ladefehler: die Analyse ist dabei vollstaendig,
+    #: es fehlen nur Textfelder. Deshalb ein eigener Zaehler.
+    metadata_failed: int = 0
     last_seconds: float = 0.0
     total_seconds: float = 0.0
     queue_length: int = 0
@@ -90,6 +94,10 @@ class AnalysisMetrics:
     def note_failure(self) -> None:
         with self._lock:
             self.failed += 1
+
+    def note_metadata_failure(self) -> None:
+        with self._lock:
+            self.metadata_failed += 1
 
     @property
     def hit_rate(self) -> float:

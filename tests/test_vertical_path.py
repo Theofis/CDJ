@@ -29,6 +29,7 @@ from virtual_cdj.core.input_layer import InputLayer
 from virtual_cdj.deck.commands import CommandType, command
 from virtual_cdj.deck.engine import Deck
 from virtual_cdj.deck.mapping import InputMapper
+from virtual_cdj.deck.mode_manager import OperatingMode
 from virtual_cdj.deck.provider import LocalDeckStateProvider
 from virtual_cdj.deck.state import (
     AudioStatus,
@@ -703,7 +704,9 @@ class ApplicationWiringTests(unittest.TestCase):
 
         from virtual_cdj.app import CdjApplication
 
-        app = CdjApplication([1], start_audio=False)
+        app = CdjApplication(
+            [1], start_audio=False, operating_mode=OperatingMode.CDJ
+        )
         try:
             result = app.load_track_now(1, fixtures().wav)
             self.assertTrue(result.ok)
@@ -726,7 +729,9 @@ class ApplicationWiringTests(unittest.TestCase):
 
         from virtual_cdj.app import CdjApplication
 
-        app = CdjApplication([1, 2], start_audio=False)
+        app = CdjApplication(
+            [1, 2], start_audio=False, operating_mode=OperatingMode.CDJ
+        )
         try:
             app.load_track(2, fixtures().wav)
             deadline = time.monotonic() + 60.0
@@ -745,7 +750,9 @@ class ApplicationWiringTests(unittest.TestCase):
     def test_panel_input_reaches_the_bound_deck_only(self) -> None:
         from virtual_cdj.app import CdjApplication
 
-        app = CdjApplication([1, 2], start_audio=False)
+        app = CdjApplication(
+            [1, 2], start_audio=False, operating_mode=OperatingMode.CDJ
+        )
         try:
             app.load_track_now(1, fixtures().wav)
             app.input_layer.press(ids.PLAY)
@@ -759,7 +766,9 @@ class ApplicationWiringTests(unittest.TestCase):
     def test_metrics_are_available_for_the_debug_overlay(self) -> None:
         from virtual_cdj.app import CdjApplication
 
-        app = CdjApplication([1], start_audio=False)
+        app = CdjApplication(
+            [1], start_audio=False, operating_mode=OperatingMode.CDJ
+        )
         try:
             app.load_track_now(1, fixtures().wav)
             self.assertIsNotNone(app.audio.metrics)
